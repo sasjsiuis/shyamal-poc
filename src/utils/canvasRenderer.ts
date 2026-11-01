@@ -480,22 +480,12 @@ function renderPsdTemplateArtwork(
     ctx.fillStyle = '#621027';
     ctx.fillRect(pBox.x, 726, pBox.width, 272);
 
-    // Bottom "••• বিস্তারিত কমেন্টে •••" in yellow/gold with divider lines
-    ctx.fillStyle = '#ffd132';
-    ctx.font = `700 32px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+    // Bottom "বিস্তারিত কমেন্টে" in golden-yellow embedded in the bottom border opening
+    ctx.fillStyle = '#f7cf46';
+    ctx.font = `700 34px 'Kalpurush', 'Hind Siliguri', 'Noto Serif Bengali', serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('••• বিস্তারিত কমেন্টে •••', W / 2, 1030);
-
-    const ctaW = ctx.measureText('••• বিস্তারিত কমেন্টে •••').width;
-    ctx.strokeStyle = 'rgba(255, 209, 50, 0.7)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(64, 1030);
-    ctx.lineTo(W / 2 - ctaW / 2 - 20, 1030);
-    ctx.moveTo(W / 2 + ctaW / 2 + 20, 1030);
-    ctx.lineTo(1018, 1030);
-    ctx.stroke();
+    ctx.fillText('বিস্তারিত কমেন্টে', W / 2, 1016);
   }
 }
 

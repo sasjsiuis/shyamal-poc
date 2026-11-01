@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="2000" viewBox="0 0 2000 2000">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@600;700&amp;family=Plus+Jakarta+Sans:wght@700&amp;display=swap');
+      .bn-bold { font-family: 'Hind Siliguri', 'Kalpurush', sans-serif; font-weight: 700; }
+      .en-bold { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; }
+    </style>
+    <mask id="photoHole">
+      <rect width="2000" height="2000" fill="white" />
+      <rect x="62" y="512" width="1864" height="1057" fill="black" />
+    </mask>
+  </defs>
+
+  <!-- Masked background with transparent photo hole -->
+  <g mask="url(#photoHole)">
+    <!-- Top green banner -->
+    <rect x="0" y="0" width="2000" height="512" fill="#024c4b" />
+    <!-- Bottom white card area -->
+    <rect x="0" y="1569" width="2000" height="431" fill="#ffffff" />
+  </g>
+
+  <!-- White border around photo window -->
+  <rect x="62" y="512" width="1864" height="1057" fill="none" stroke="#ffffff" stroke-width="4" />
+
+  <!-- White bottom area elements -->
+  <g id="footer">
+    <!-- Centered CTA pill -->
+    <rect x="695" y="1604" width="610" height="82" rx="41" fill="#01665e" />
+    <text x="1000" y="1660" class="bn-bold" font-size="42" fill="#ffffff" text-anchor="middle">••• বিস্তারিত কমেন্টে •••</text>
+
+    <!-- Side dots -->
+    <circle cx="620" cy="1645" r="12" fill="#01665e" />
+    <circle cx="580" cy="1645" r="12" fill="#01665e" />
+    <circle cx="540" cy="1645" r="12" fill="#01665e" />
+
+    <circle cx="1380" cy="1645" r="12" fill="#01665e" />
+    <circle cx="1420" cy="1645" r="12" fill="#01665e" />
+    <circle cx="1460" cy="1645" r="12" fill="#01665e" />
+
+    <!-- Left URL -->
+    <text x="92" y="1920" class="en-bold" font-size="64" fill="#65142a">shyamalsylhet.net</text>
+
+    <!-- Right Brand Logo -->
+    <text x="1530" y="1828" class="bn-bold" font-size="32" fill="#dc2626">নতুন শতাব্দীর দৈনিক</text>
+    <text x="1175" y="1935" class="bn-bold" font-size="126" fill="#dc2626">শ্যামল</text>
+    <text x="1565" y="1935" class="bn-bold" font-size="126" fill="#028669">সিলেট</text>
+    <text x="1605" y="1968" class="en-bold" font-size="28" fill="#475569">Shyamal Sylhet</text>
+  </g>
+</svg>

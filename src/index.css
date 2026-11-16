@@ -17,11 +17,15 @@
     font-family: 'Hind Siliguri', 'Noto Sans Bengali', 'Plus Jakarta Sans', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: clip;
+    max-width: 100%;
   }
 
   body {
     margin: 0;
     min-height: 100vh;
+    overflow-x: clip;
+    max-width: 100%;
     background: linear-gradient(135deg, #fcf0e0 0%, #fcf6ee 45%, #fbf6f0 100%);
     color: #1e293b;
     transition: background-color 150ms ease, color 150ms ease;

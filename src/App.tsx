@@ -2169,7 +2169,7 @@ export default function App() {
   const countHighlightedWords = parsedWords.filter((w) => isWordHighlighted(w)).length;
 
   return (
-    <div className="min-h-screen w-full px-3 py-4 sm:px-6 sm:py-6">
+    <div className="min-h-screen w-full overflow-x-clip px-3 py-4 sm:px-6 sm:py-6">
       <input
         ref={photoInputRef}
         type="file"
@@ -2193,14 +2193,14 @@ export default function App() {
         className="hidden"
       />
 
-      <div className="mx-auto max-w-[1160px]">
+      <div className="mx-auto w-full min-w-0 max-w-[1160px]">
         {/* Clean 3-Zone Top Navigation Bar */}
-        <header className="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e8dfd0] pb-3.5 dark:border-slate-800">
+        <header className="mb-4 flex flex-wrap items-center justify-between gap-2.5 border-b border-[#e8dfd0] pb-3.5 sm:mb-5 sm:gap-4 dark:border-slate-800">
           {/* Zone 1: Brand Title */}
           <button
             type="button"
             onClick={() => navigateToPage('generator')}
-            className="cursor-pointer text-left text-lg font-bold tracking-tight text-[#1c3060] sm:text-xl whitespace-nowrap shrink-0 dark:text-slate-100"
+            className="max-w-full cursor-pointer text-left text-lg font-bold tracking-tight text-[#1c3060] sm:text-xl dark:text-slate-100"
           >
             নিউজ ফটো কার্ড জেনারেটর
           </button>
@@ -2208,30 +2208,30 @@ export default function App() {
           {/* Zone 2: Page Navigation Links */}
           <nav
             aria-label="পেইজ নেভিগেশন"
-            className="flex items-center gap-1 rounded-xl border border-[#e5dccd] bg-white p-1 shadow-[0_1px_6px_rgba(28,48,96,0.05)] dark:border-slate-700 dark:bg-slate-800"
+            className="flex max-w-full flex-wrap items-center gap-1 rounded-xl border border-[#e5dccd] bg-white p-1 shadow-[0_1px_6px_rgba(28,48,96,0.05)] sm:flex-nowrap dark:border-slate-700 dark:bg-slate-800"
           >
             <button
               type="button"
               onClick={() => navigateToPage('generator')}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-colors whitespace-nowrap shrink-0 sm:text-[13px] ${
+              className={`inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0 sm:px-3.5 sm:text-[13px] ${
                 activePage === 'generator'
                   ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
                   : 'text-[#475569] hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
               }`}
             >
-              <Pencil className="h-3.5 w-3.5" />
+              <Pencil className="h-3.5 w-3.5 shrink-0" />
               <span>কার্ড জেনারেটর</span>
             </button>
             <button
               type="button"
               onClick={() => navigateToPage('templates')}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-colors whitespace-nowrap shrink-0 sm:text-[13px] ${
+              className={`inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0 sm:px-3.5 sm:text-[13px] ${
                 activePage === 'templates'
                   ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
                   : 'text-[#475569] hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
               }`}
             >
-              <LayoutGrid className="h-3.5 w-3.5" />
+              <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
               <span>সব টেমপ্লেট ({ALL_TEMPLATES.length}+)</span>
             </button>
           </nav>
@@ -2240,7 +2240,7 @@ export default function App() {
           <div
             role="group"
             aria-label="থিম নির্বাচন"
-            className="inline-flex items-center gap-0.5 rounded-full border border-[#ebe4d8] bg-white p-1 shadow-[0_2px_8px_rgba(28,48,96,0.08)] shrink-0 dark:border-slate-700 dark:bg-slate-800"
+            className="inline-flex max-w-full shrink-0 items-center gap-0.5 rounded-full border border-[#ebe4d8] bg-white p-1 shadow-[0_2px_8px_rgba(28,48,96,0.08)] dark:border-slate-700 dark:bg-slate-800"
           >
             <button
               type="button"
@@ -2393,7 +2393,7 @@ export default function App() {
             {/* 2-Column Workspace */}
             <main className="grid grid-cols-1 items-start gap-5 md:grid-cols-[420px_1fr] lg:grid-cols-[460px_1fr]">
               {/* LEFT COLUMN: Sticky Live Card Preview + Quick Actions */}
-              <div className="w-full space-y-2.5 md:sticky md:top-4">
+              <div className="min-w-0 w-full space-y-2.5 md:sticky md:top-4">
                 <div className="rounded-2xl border border-[#ebe5da] bg-white p-2.5 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
                   <div className="overflow-hidden rounded-xl">
                     <canvas
@@ -2445,16 +2445,16 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleDownloadCard}
-                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1c3060] px-5 py-3 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-[#15254b] active:scale-[0.995] whitespace-nowrap dark:bg-[#254689] dark:hover:bg-[#2d54a4]"
+                  className="flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1c3060] px-4 py-3 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-[#15254b] active:scale-[0.995] dark:bg-[#254689] dark:hover:bg-[#2d54a4]"
                 >
                   {downloadDone ? (
                     <>
-                      <Check className="h-4 w-4 stroke-[2.5]" />
+                      <Check className="h-4 w-4 stroke-[2.5] shrink-0" />
                       <span>ডাউনলোড সম্পন্ন হয়েছে</span>
                     </>
                   ) : (
                     <>
-                      <Download className="h-4 w-4 stroke-[2.5]" />
+                      <Download className="h-4 w-4 stroke-[2.5] shrink-0" />
                       <span>কার্ড ডাউনলোড করুন</span>
                     </>
                   )}
@@ -2465,7 +2465,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => handleSelectTemplate(PSD_GREEN_TEMPLATE)}
-                    className={`cursor-pointer rounded-xl py-2 px-3 text-[13.5px] font-bold transition-colors whitespace-nowrap shrink-0 truncate ${
+                    className={`min-h-[42px] min-w-0 cursor-pointer truncate rounded-xl px-2.5 py-2 text-[13px] font-bold transition-colors sm:px-3 sm:text-[13.5px] ${
                       selectedTemplate.id === PSD_GREEN_TEMPLATE.id
                         ? 'bg-[#1c3060] text-white shadow-sm dark:bg-[#254689]'
                         : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1c3060] hover:bg-[#eae2d5] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
@@ -2476,7 +2476,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => handleSelectTemplate(PSD_MAROON_TEMPLATE)}
-                    className={`cursor-pointer rounded-xl py-2 px-3 text-[13.5px] font-bold transition-colors whitespace-nowrap shrink-0 truncate ${
+                    className={`min-h-[42px] min-w-0 cursor-pointer truncate rounded-xl px-2.5 py-2 text-[13px] font-bold transition-colors sm:px-3 sm:text-[13.5px] ${
                       selectedTemplate.id === PSD_MAROON_TEMPLATE.id
                         ? 'bg-[#1c3060] text-white shadow-sm dark:bg-[#254689]'
                         : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1c3060] hover:bg-[#eae2d5] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
@@ -2498,30 +2498,30 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => photoInputRef.current?.click()}
-                    className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#c9c5c0] bg-white px-3 py-2 text-[13px] font-bold text-[#1c3060] transition-colors hover:bg-[#f4eee4] whitespace-nowrap dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                    className="inline-flex min-h-[42px] min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#c9c5c0] bg-white px-2 py-2 text-[12.5px] font-bold text-[#1c3060] transition-colors hover:bg-[#f4eee4] sm:px-3 sm:text-[13px] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                   >
                     <ImagePlus className="h-4 w-4 shrink-0" />
-                    <span>নিজের ছবি দিন</span>
+                    <span className="truncate">নিজের ছবি দিন</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => customFrameInputRef.current?.click()}
-                    className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#b0a99f] bg-[#fbf8f3] px-3 py-2 text-[13px] font-bold text-[#1c3060] transition-colors hover:border-[#1c3060] hover:bg-[#f4eee4] whitespace-nowrap dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300 dark:hover:border-sky-400"
+                    className="inline-flex min-h-[42px] min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#b0a99f] bg-[#fbf8f3] px-2 py-2 text-[12.5px] font-bold text-[#1c3060] transition-colors hover:border-[#1c3060] hover:bg-[#f4eee4] sm:px-3 sm:text-[13px] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300 dark:hover:border-sky-400"
                   >
                     <Upload className="h-4 w-4 shrink-0" />
-                    <span>আসল ফ্রেম PNG</span>
+                    <span className="truncate">আসল ফ্রেম PNG</span>
                   </button>
                 </div>
 
-                {/* Browse Dedicated 98+ Templates Page CTA */}
+                {/* Browse Dedicated 70+ Templates Page CTA */}
                 <button
                   type="button"
                   onClick={() => navigateToPage('templates')}
-                  className="flex w-full cursor-pointer items-center justify-between rounded-xl border border-[#d6cfc2] bg-white px-4 py-2.5 text-[13.5px] font-bold text-[#1c3060] shadow-xs transition-colors hover:border-[#1c3060] hover:bg-[#faf6ef] dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 dark:hover:border-sky-400"
+                  className="flex min-h-[44px] w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-[#d6cfc2] bg-white px-3.5 py-2.5 text-[13px] font-bold text-[#1c3060] shadow-xs transition-colors hover:border-[#1c3060] hover:bg-[#faf6ef] sm:px-4 sm:text-[13.5px] dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 dark:hover:border-sky-400"
                 >
-                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                    <LayoutGrid className="h-4 w-4 text-[#faab3f]" />
-                    <span>সব {ALL_TEMPLATES.length}+ টেমপ্লেট ও ক্যাটাগরি দেখুন</span>
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <LayoutGrid className="h-4 w-4 shrink-0 text-[#faab3f]" />
+                    <span className="truncate">সব {ALL_TEMPLATES.length}+ টেমপ্লেট ও ক্যাটাগরি দেখুন</span>
                   </span>
                   <ArrowRight className="h-4 w-4 shrink-0" />
                 </button>
@@ -2541,7 +2541,7 @@ export default function App() {
               </div>
 
           {/* RIGHT COLUMN: Headline Card (with Interactive Word-by-Word Click Highlight) */}
-          <div className="w-full space-y-3">
+          <div className="min-w-0 w-full space-y-3">
             <section className="rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
               <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -2577,30 +2577,30 @@ export default function App() {
                 </div>
 
                 {/* Sub-Tabs for Highlight Experience */}
-                <div className="inline-flex rounded-lg border border-[#e2dcd1] bg-[#f4eee4] p-0.5 text-xs font-semibold dark:border-slate-700 dark:bg-slate-800">
+                <div className="grid w-full grid-cols-2 rounded-lg border border-[#e2dcd1] bg-[#f4eee4] p-0.5 text-xs font-semibold sm:inline-flex sm:w-auto dark:border-slate-700 dark:bg-slate-800">
                   <button
                     type="button"
                     onClick={() => setHighlightTab('words')}
-                    className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-2.5 py-1 transition-colors whitespace-nowrap ${
+                    className={`inline-flex min-w-0 cursor-pointer items-center justify-center gap-1 rounded-md px-2 py-1.5 transition-colors sm:px-2.5 sm:py-1 ${
                       highlightTab === 'words'
                         ? 'bg-[#1c3060] text-white shadow-xs dark:bg-[#254689]'
                         : 'text-[#57534e] hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
                     }`}
                   >
-                    <MousePointerClick className="h-3 w-3" />
-                    <span>শব্দে শব্দে হাইলাইট</span>
+                    <MousePointerClick className="h-3 w-3 shrink-0" />
+                    <span className="truncate">শব্দে শব্দে হাইলাইট</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setHighlightTab('manual')}
-                    className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-2.5 py-1 transition-colors whitespace-nowrap ${
+                    className={`inline-flex min-w-0 cursor-pointer items-center justify-center gap-1 rounded-md px-2 py-1.5 transition-colors sm:px-2.5 sm:py-1 ${
                       highlightTab === 'manual'
                         ? 'bg-[#1c3060] text-white shadow-xs dark:bg-[#254689]'
                         : 'text-[#57534e] hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
                     }`}
                   >
-                    <Highlighter className="h-3 w-3" />
-                    <span>সিলেকশন টুল</span>
+                    <Highlighter className="h-3 w-3 shrink-0" />
+                    <span className="truncate">সিলেকশন টুল</span>
                   </button>
                 </div>
               </div>
@@ -2987,7 +2987,7 @@ export default function App() {
                             type="button"
                             onClick={() => setSelectedFontId(f.id)}
                             style={{ fontFamily: f.family }}
-                            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-bold transition-colors whitespace-nowrap shrink-0 ${
+                            className={`inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-bold transition-colors ${
                               isSelected
                                 ? 'bg-[#faab3f] text-[#111827] border border-[#e08e1b]'
                                 : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1e293b] hover:bg-[#ebe3d6] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600'
@@ -3213,7 +3213,7 @@ export default function App() {
                 {/* Panel 3: Unified Brand Logo & Dark-Background Adjustment & Export Format */}
                 <section className="space-y-4 rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
+                    <div className="min-w-0">
                       <span className="block text-[13.5px] font-semibold text-[#1c3060] dark:text-slate-100">
                         সকল কার্ডে ব্র্যান্ড লোগো ও ডাউনলোড
                       </span>

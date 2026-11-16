@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  ChevronDown,
   Layers,
   Loader2,
   Maximize2,
@@ -10,6 +11,7 @@ import {
   Pencil,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   Sparkles,
   Tag,
   Trash2,
@@ -278,6 +280,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<TemplateCategory>('সব');
+  const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false);
   const [editingCategoryKey, setEditingCategoryKey] = useState<Exclude<TemplateCategory, 'সব'> | null>(null);
   const [categoryDraft, setCategoryDraft] = useState('');
   const [inspectedTemplateId, setInspectedTemplateId] = useState<string | null>(null);
@@ -341,14 +344,25 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
     return ALL_TEMPLATES.find((t) => t.id === inspectedTemplateId) || null;
   }, [inspectedTemplateId]);
 
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { সব: resolvedTemplates.length };
+    for (const tpl of resolvedTemplates) {
+      counts[tpl.category] = (counts[tpl.category] || 0) + 1;
+    }
+    return counts;
+  }, [resolvedTemplates]);
+
   useEffect(() => {
-    if (!inspectedTemplate) return;
+    if (!inspectedTemplate && !isCategoryPickerOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setInspectedTemplateId(null);
+      if (e.key === 'Escape') {
+        if (isCategoryPickerOpen) setIsCategoryPickerOpen(false);
+        else setInspectedTemplateId(null);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [inspectedTemplate]);
+  }, [inspectedTemplate, isCategoryPickerOpen]);
 
   const startEditingCategory = (catKey: Exclude<TemplateCategory, 'সব'>) => {
     setEditingCategoryKey(catKey);
@@ -365,19 +379,19 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 w-full space-y-4 sm:space-y-5">
       {/* Page Header + Back Button */}
       <section className="flex flex-col gap-3 rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] sm:flex-row sm:items-center sm:justify-between sm:p-5 dark:border-slate-700/80 dark:bg-slate-800/95">
-        <h2 className="text-xl font-bold text-[#1c3060] sm:text-2xl dark:text-slate-100">
+        <h2 className="min-w-0 text-lg font-bold text-[#1c3060] sm:text-2xl dark:text-slate-100">
           {ALL_TEMPLATES.length}+ ফ্রি প্রফেশনাল টেমপ্লেট ও ক্যাটাগরি
         </h2>
 
         <button
           type="button"
           onClick={onBackToGenerator}
-          className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#c9c5c0] bg-[#f4eee4] px-4 py-2.5 text-sm font-bold text-[#1c3060] transition-colors hover:bg-[#eae2d5] whitespace-nowrap shrink-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+          className="inline-flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#c9c5c0] bg-[#f4eee4] px-4 py-2.5 text-sm font-bold text-[#1c3060] transition-colors hover:bg-[#eae2d5] sm:min-h-0 sm:w-auto sm:shrink-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-4 w-4 shrink-0" />
           <span>কার্ড জেনারেটরে ফিরুন</span>
         </button>
       </section>
@@ -418,7 +432,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
               onClick={onClearNewsUrl}
               title="লিংক মুছে প্রথম অবস্থায় ফিরুন"
               aria-label="লিংক মুছুন"
-              className="absolute right-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
             >
               <X className="h-4 w-4" />
             </button>
@@ -426,24 +440,86 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
         </div>
       </section>
 
-      {/* Search & Category Filter Controls */}
-      <section className="space-y-3.5 rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] sm:p-5 dark:border-slate-700/80 dark:bg-slate-800/95">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1">
+      {/* Search & Clean Click-to-Filter Category Toolbar */}
+      <section className="space-y-3 rounded-2xl border border-[#ebe5da] bg-white p-3.5 shadow-[0_2px_12px_rgba(28,48,96,0.05)] sm:p-5 dark:border-slate-700/80 dark:bg-slate-800/95">
+        {/* Row 1: Search Input + Click-to-Filter Category Selector */}
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="টেমপ্লেট, স্টাইল বা ক্যাটাগরি খুঁজুন (যেমন: প্রবাসে সিলেট, চাকরির খোঁজে, ইসলাম, ভিডিও)..."
-              className="w-full rounded-xl border border-[#d6cfc2] bg-white py-2.5 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              placeholder="টেমপ্লেট, স্টাইল বা ক্যাটাগরি খুঁজুন..."
+              className="min-h-[44px] w-full rounded-xl border border-[#d6cfc2] bg-white py-2.5 pl-10 pr-9 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
+            {searchQuery.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="খোঁজা মুছুন"
+                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsCategoryPickerOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={isCategoryPickerOpen}
+              className={`inline-flex min-h-[44px] flex-1 cursor-pointer items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-sm font-bold transition-colors sm:flex-initial ${
+                activeCategory !== 'সব'
+                  ? 'border-[#1c3060] bg-[#1c3060] text-white dark:border-sky-500 dark:bg-[#254689]'
+                  : 'border-[#c9c5c0] bg-[#f4eee4] text-[#1c3060] hover:bg-[#ebe3d5] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600'
+              }`}
+            >
+              <span className="inline-flex min-w-0 items-center gap-2">
+                <SlidersHorizontal className="h-4 w-4 shrink-0" />
+                <span className="truncate">
+                  {activeCategory === 'সব'
+                    ? 'ক্যাটাগরি ফিল্টার: সব'
+                    : `ক্যাটাগরি: ${getCategoryDisplayName(activeCategory)}`}
+                </span>
+                <span
+                  className={`shrink-0 text-xs tabular-nums ${
+                    activeCategory !== 'সব'
+                      ? 'text-white/80'
+                      : 'text-slate-500 dark:text-slate-300'
+                  }`}
+                >
+                  ({categoryCounts[activeCategory] ?? resolvedTemplates.length})
+                </span>
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 opacity-80" />
+            </button>
+
+            {activeCategory !== 'সব' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory('সব');
+                  setEditingCategoryKey(null);
+                }}
+                title="সব ক্যাটাগরি দেখুন"
+                className="inline-flex min-h-[44px] cursor-pointer items-center gap-1 rounded-xl border border-[#c9c5c0] bg-white px-3 py-2 text-xs font-bold text-[#1c3060] hover:bg-[#f4eee4] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700"
+              >
+                <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                <span>সব দেখুন</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2: Logo Badge Options + Remove Default Logo + Count (wraps cleanly on any phone width) */}
+        <div className="flex flex-col gap-2.5 border-t border-[#f1ece2] pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between dark:border-slate-700/70">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {(logoSettings.dataUrl || !logoSettings.hideDefaultBrand) && (
-              <div className="inline-flex items-center gap-1 rounded-lg border border-[#e2dcd1] bg-[#f4eee4] p-0.5 text-xs dark:border-slate-700 dark:bg-slate-900">
-                <span className="px-2 font-semibold text-[#57534e] whitespace-nowrap dark:text-slate-300">
+              <div className="flex max-w-full flex-wrap items-center gap-1 rounded-xl border border-[#e2dcd1] bg-[#f4eee4] p-1 text-xs dark:border-slate-700 dark:bg-slate-900">
+                <span className="px-1.5 py-1 font-semibold text-[#57534e] dark:text-slate-300">
                   লোগো ব্যাজ:
                 </span>
                 {(
@@ -460,7 +536,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
                       key={opt.id}
                       type="button"
                       onClick={() => onChangeLogoBadgeStyle(opt.id)}
-                      className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                      className={`min-h-[34px] cursor-pointer rounded-lg px-2.5 py-1 text-xs font-bold transition-colors ${
                         active
                           ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
                           : 'text-slate-700 hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
@@ -476,7 +552,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
             <button
               type="button"
               onClick={onToggleDefaultLogo}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors ${
                 !logoSettings.dataUrl && logoSettings.hideDefaultBrand
                   ? 'border-[#1c3060] bg-[#eef3ff] text-[#1c3060] hover:bg-[#dfe8ff] dark:border-sky-500 dark:bg-sky-950/60 dark:text-sky-200'
                   : 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-800/80 dark:bg-red-950/50 dark:text-red-300 dark:hover:bg-red-950/80'
@@ -484,55 +560,21 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
             >
               {!logoSettings.dataUrl && logoSettings.hideDefaultBrand ? (
                 <>
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-3.5 w-3.5 shrink-0" />
                   <span>ডিফল্ট লোগো ফিরিয়ে আনুন</span>
                 </>
               ) : (
                 <>
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-3.5 w-3.5 shrink-0" />
                   <span>{logoSettings.dataUrl ? 'লোগো রিমুভ' : 'ডিফল্ট লোগো রিমুভ'}</span>
                 </>
               )}
             </button>
-
-            <p className="text-xs font-semibold text-[#6b655e] tabular-nums whitespace-nowrap dark:text-slate-400">
-              দেখানো হচ্ছে {filteredTemplates.length}টি টেমপ্লেট
-            </p>
           </div>
-        </div>
 
-        {/* Category Tabs */}
-        <div className="flex flex-wrap gap-1.5">
-          {TEMPLATE_CATEGORIES.map((cat) => {
-            const isActive = activeCategory === cat;
-            const displayLabel = getCategoryDisplayName(cat);
-            const count =
-              cat === 'সব'
-                ? resolvedTemplates.length
-                : resolvedTemplates.filter((t) => t.category === cat).length;
-
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setActiveCategory(cat)}
-                className={`inline-flex cursor-pointer items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                  isActive
-                    ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
-                    : 'border border-[#c9c5c0] bg-[#f4eee4] text-slate-800 hover:bg-[#ebe3d5] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                <span>{displayLabel}</span>
-                <span
-                  className={`text-[11px] tabular-nums ${
-                    isActive ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  ({count})
-                </span>
-              </button>
-            );
-          })}
+          <p className="text-xs font-semibold text-[#6b655e] tabular-nums dark:text-slate-400">
+            দেখানো হচ্ছে {filteredTemplates.length}টি টেমপ্লেট
+          </p>
         </div>
 
         {/* Inline Category Rename Bar */}
@@ -890,6 +932,86 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Filter Sheet / Dialog */}
+      {isCategoryPickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 backdrop-blur-xs sm:items-center sm:p-5"
+          onClick={() => setIsCategoryPickerOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-picker-title"
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[82vh] w-full max-w-[680px] flex-col overflow-hidden rounded-t-3xl border border-[#e3dbcd] bg-white shadow-2xl sm:rounded-2xl dark:border-slate-700 dark:bg-slate-900"
+          >
+            {/* Mobile drag handle */}
+            <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-slate-300 sm:hidden dark:bg-slate-700" />
+
+            <div className="flex items-center justify-between border-b border-[#ebe5da] px-4 py-3.5 sm:px-5 dark:border-slate-800">
+              <div className="min-w-0">
+                <h3
+                  id="category-picker-title"
+                  className="text-base font-bold text-[#1c3060] sm:text-lg dark:text-slate-100"
+                >
+                  ক্যাটাগরি অনুযায়ী টেমপ্লেট বাছাই করুন
+                </h3>
+                <p className="text-xs text-[#6b655e] dark:text-slate-400">
+                  খবরের ধরন অনুযায়ী যেকোনো একটি ক্যাটাগরিতে ক্লিক করুন
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCategoryPickerOpen(false)}
+                aria-label="বন্ধ করুন"
+                className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d6cfc2] bg-[#faf6ef] text-slate-700 hover:bg-[#ebe3d6] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 overflow-y-auto p-4 sm:grid-cols-2 sm:p-5 md:grid-cols-3">
+              {TEMPLATE_CATEGORIES.map((cat) => {
+                const isActive = activeCategory === cat;
+                const displayLabel = getCategoryDisplayName(cat);
+                const count = categoryCounts[cat] ?? 0;
+
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => {
+                      setActiveCategory(cat);
+                      setEditingCategoryKey(null);
+                      setIsCategoryPickerOpen(false);
+                    }}
+                    className={`flex min-h-[48px] cursor-pointer items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+                      isActive
+                        ? 'border-[#1c3060] bg-[#1c3060] text-white shadow-xs dark:border-sky-500 dark:bg-[#254689]'
+                        : 'border-[#e6dfd2] bg-[#faf6ef] text-slate-800 hover:border-[#1c3060]/50 hover:bg-[#f2ebde] dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:border-sky-400/60 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      {isActive && <Check className="h-4 w-4 shrink-0 text-[#faab3f]" />}
+                      <span className="truncate text-sm font-bold">
+                        {cat === 'সব' ? 'সব ক্যাটাগরি' : displayLabel}
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 text-xs font-semibold tabular-nums ${
+                        isActive ? 'text-white/85' : 'text-[#6b655e] dark:text-slate-400'
+                      }`}
+                    >
+                      {count}টি
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -310,13 +310,52 @@ function getBengaliDateString(): string {
 }
 
 // Pixel-perfect procedural rendering of Green & Maroon fallback frames
+function maskMaroonBakedLogoRegion(
+  ctx: CanvasRenderingContext2D,
+  closeTopBorder: boolean
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(364, 4, 352, 77);
+  ctx.clip();
+
+  const bgGrad = ctx.createLinearGradient(0, 0, 1080, 1080);
+  bgGrad.addColorStop(0, '#5a0b22');
+  bgGrad.addColorStop(0.45, '#69122c');
+  bgGrad.addColorStop(0.7, '#550c20');
+  bgGrad.addColorStop(1, '#420616');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, 1080, 1080);
+
+  const sheen = ctx.createLinearGradient(1080, 0, 0, 1080);
+  sheen.addColorStop(0, 'rgba(255, 255, 255, 0.12)');
+  sheen.addColorStop(0.4, 'rgba(255, 255, 255, 0.04)');
+  sheen.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+  sheen.addColorStop(1, 'rgba(0, 0, 0, 0.25)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(0, 0, 1080, 1080);
+  ctx.restore();
+
+  if (closeTopBorder) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(364, 66);
+    ctx.lineTo(716, 66);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function renderPsdTemplateArtwork(
   ctx: CanvasRenderingContext2D,
   templateId: string,
   W: number,
   H: number,
   pBox: RectBox,
-  hideDefaultBrand: boolean
+  hideDefaultBrand: boolean,
+  hasLogoInTopSlot = true
 ): void {
   if (templateId === 'psd-green') {
     // Top and side wrapping dark teal banner (y=0 to 1569)
@@ -380,16 +419,21 @@ function renderPsdTemplateArtwork(
       }
     }
 
-    // Outer white/cream frame with opening at the top for logo
+    // Outer white/cream frame (leave opening at top only when a logo sits there)
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.lineWidth = 2.5;
 
     // Top horizontal segments
     ctx.beginPath();
-    ctx.moveTo(54, 66);
-    ctx.lineTo(365, 66);
-    ctx.moveTo(715, 66);
-    ctx.lineTo(1026, 66);
+    if (hasLogoInTopSlot) {
+      ctx.moveTo(54, 66);
+      ctx.lineTo(365, 66);
+      ctx.moveTo(715, 66);
+      ctx.lineTo(1026, 66);
+    } else {
+      ctx.moveTo(54, 66);
+      ctx.lineTo(1026, 66);
+    }
 
     // Left and Right verticals
     ctx.moveTo(54, 66);
@@ -590,7 +634,7 @@ function renderProceduralTemplateChrome(
   zoom: number,
   panX: number,
   panY: number,
-  hideDefaultBrand: boolean,
+  hasActiveLogo: boolean,
   isExport: boolean
 ): BrandLogoSlot {
   const W = template.canvasWidth;
@@ -647,8 +691,7 @@ function renderProceduralTemplateChrome(
     ctx.font = `600 25px 'Hind Siliguri', sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    const leftMeta =
-      !hideDefaultBrand && kicker ? `${kicker}  •  ${dateStr}` : dateStr;
+    const leftMeta = kicker ? `${kicker}  •  ${dateStr}` : dateStr;
     ctx.fillText(leftMeta, 54, H - 56);
 
     return {
@@ -663,14 +706,19 @@ function renderProceduralTemplateChrome(
       padY: 10,
     };
   } else if (template.styleType === 'framed-bottom-box') {
-    // Top frame segments with centered opening for the brand logo
+    // Top frame segments (leave centered opening only when brand logo sits there)
     ctx.strokeStyle = 'rgba(255,255,255,0.65)';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(36, 42);
-    ctx.lineTo(W / 2 - 190, 42);
-    ctx.moveTo(W / 2 + 190, 42);
-    ctx.lineTo(W - 36, 42);
+    if (hasActiveLogo) {
+      ctx.moveTo(36, 42);
+      ctx.lineTo(W / 2 - 190, 42);
+      ctx.moveTo(W / 2 + 190, 42);
+      ctx.lineTo(W - 36, 42);
+    } else {
+      ctx.moveTo(36, 42);
+      ctx.lineTo(W - 36, 42);
+    }
     ctx.moveTo(36, 42);
     ctx.lineTo(36, H - 42);
     ctx.moveTo(W - 36, 42);
@@ -683,7 +731,7 @@ function renderProceduralTemplateChrome(
     ctx.fillRect(pBox.x - 8, pBox.y - 8, pBox.width + 16, pBox.height + 16);
     drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, pBox.x + 20, pBox.y + 20, 44, pal.badgeBg, pal.badgeText, 8, 'left', 24);
     }
 
@@ -721,19 +769,13 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = scrim;
     ctx.fillRect(0, H * 0.36, W, H - H * 0.36);
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, 48, 44, 56, pal.badgeBg, pal.badgeText, 8, 'left', 28);
     }
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 90, W, 90);
-    const footerLine = ctaText
-      ? hideDefaultBrand
-        ? ctaText
-        : `${dateStr}  •  ${ctaText}`
-      : hideDefaultBrand
-        ? ''
-        : dateStr;
+    const footerLine = ctaText ? `${dateStr}  •  ${ctaText}` : dateStr;
     if (footerLine) {
       ctx.fillStyle = pal.footerText;
       ctx.font = `700 30px 'Kalpurush', 'Hind Siliguri', sans-serif`;
@@ -757,7 +799,7 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(0, 0, W, 92);
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, 52, 20, 52, pal.badgeBg, pal.badgeText, 6, 'left', 27);
     }
 
@@ -768,13 +810,7 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 78, W, 78);
-    const footerLine = ctaText
-      ? hideDefaultBrand
-        ? ctaText
-        : `${dateStr}  •  ${ctaText}`
-      : hideDefaultBrand
-        ? ''
-        : dateStr;
+    const footerLine = ctaText ? `${dateStr}  •  ${ctaText}` : dateStr;
     if (footerLine) {
       ctx.fillStyle = pal.footerText;
       ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
@@ -802,22 +838,20 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = pal.accent;
     ctx.fillRect(64, 58, W - 128, 6);
 
-    if (!hideDefaultBrand) {
-      if (kicker) {
-        ctx.fillStyle = pal.accent;
-        ctx.font = `700 26px 'Hind Siliguri', sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(kicker, 64, 88);
-      }
-
-      ctx.fillStyle = template.defaultTextColor || '#334155';
-      ctx.globalAlpha = 0.75;
-      ctx.textAlign = 'right';
-      ctx.font = `500 24px 'Hind Siliguri', sans-serif`;
-      ctx.fillText(dateStr, W - 64, 88);
-      ctx.globalAlpha = 1;
+    if (kicker) {
+      ctx.fillStyle = pal.accent;
+      ctx.font = `700 26px 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, 64, 88);
     }
+
+    ctx.fillStyle = template.defaultTextColor || '#334155';
+    ctx.globalAlpha = 0.75;
+    ctx.textAlign = 'right';
+    ctx.font = `500 24px 'Hind Siliguri', sans-serif`;
+    ctx.fillText(dateStr, W - 64, 88);
+    ctx.globalAlpha = 1;
 
     drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
     ctx.strokeStyle = pal.borderColor;
@@ -846,15 +880,17 @@ function renderProceduralTemplateChrome(
       padY: 8,
     };
   } else if (template.styleType === 'quote-spotlight') {
-    // Rounded border with subtle top opening for brand logo
+    // Rounded border (open at top center only when brand logo sits there)
     ctx.strokeStyle = pal.borderColor;
     ctx.lineWidth = 3;
     drawRoundedRect(ctx, 40, 40, W - 80, H - 80, 20);
     ctx.stroke();
 
-    // Clear top border segment behind centered logo slot
-    ctx.fillStyle = pal.bgPrimary;
-    ctx.fillRect(W / 2 - 188, 22, 376, 36);
+    if (hasActiveLogo) {
+      // Clear top border segment behind centered logo slot
+      ctx.fillStyle = pal.bgPrimary;
+      ctx.fillRect(W / 2 - 188, 22, 376, 36);
+    }
 
     drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
     ctx.strokeStyle = pal.accent;
@@ -872,11 +908,7 @@ function renderProceduralTemplateChrome(
     ctx.fillText('“', W / 2, pBox.y + pBox.height + 10);
 
     const quoteMeta =
-      !hideDefaultBrand && kicker && ctaText
-        ? `${kicker}  •  ${ctaText}`
-        : !hideDefaultBrand && kicker
-          ? kicker
-          : ctaText;
+      kicker && ctaText ? `${kicker}  •  ${ctaText}` : kicker || ctaText;
     if (quoteMeta) {
       ctx.fillStyle = pal.accent;
       ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
@@ -900,7 +932,7 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = pal.accent;
     ctx.fillRect(0, 0, W, 14);
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, W / 2, 34, 46, pal.badgeBg, pal.badgeText, 23, 'center', 25);
     }
 
@@ -911,15 +943,13 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 108, W, 108);
-    if (!hideDefaultBrand) {
-      ctx.fillStyle = pal.footerText;
-      ctx.globalAlpha = 0.78;
-      ctx.font = `600 22px 'Hind Siliguri', sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(dateStr, 54, H - 54);
-      ctx.globalAlpha = 1;
-    }
+    ctx.fillStyle = pal.footerText;
+    ctx.globalAlpha = 0.78;
+    ctx.font = `600 22px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 54, H - 54);
+    ctx.globalAlpha = 1;
     if (ctaText) {
       ctx.fillStyle = pal.footerText;
       ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
@@ -951,7 +981,7 @@ function renderProceduralTemplateChrome(
     ctx.fill();
     ctx.restore();
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, 56, 22, 52, pal.badgeBg, pal.badgeText, 6, 'left', 28);
     }
 
@@ -965,13 +995,7 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 84, W, 84);
-    const footerLine = ctaText
-      ? hideDefaultBrand
-        ? ctaText
-        : `${dateStr}  •  ${ctaText}`
-      : hideDefaultBrand
-        ? ''
-        : dateStr;
+    const footerLine = ctaText ? `${dateStr}  •  ${ctaText}` : dateStr;
     if (footerLine) {
       ctx.fillStyle = pal.footerText;
       ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
@@ -995,7 +1019,7 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
     ctx.fillRect(0, 0, W, 94);
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, `▶  ${kicker}`, 52, 20, 52, pal.badgeBg, pal.badgeText, 26, 'left', 26);
     }
 
@@ -1032,13 +1056,7 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 84, W, 84);
-    const footerLine = ctaText
-      ? hideDefaultBrand
-        ? ctaText
-        : `${dateStr}  •  ${ctaText}`
-      : hideDefaultBrand
-        ? ''
-        : dateStr;
+    const footerLine = ctaText ? `${dateStr}  •  ${ctaText}` : dateStr;
     if (footerLine) {
       ctx.fillStyle = pal.footerText;
       ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
@@ -1083,7 +1101,7 @@ function renderProceduralTemplateChrome(
       ctx.fill();
     }
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, W / 2, 22, 52, pal.badgeBg, pal.badgeText, 26, 'center', 27);
     }
 
@@ -1150,18 +1168,16 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = pal.accent;
     ctx.fillRect(0, 0, 22, H);
 
-    if (!hideDefaultBrand) {
-      if (kicker) {
-        drawDynamicBadge(ctx, kicker, 64, 34, 48, pal.badgeBg, pal.badgeText, 8, 'left', 25);
-      }
-      ctx.fillStyle = template.defaultTextColor || '#ffffff';
-      ctx.globalAlpha = 0.72;
-      ctx.font = `500 23px 'Hind Siliguri', sans-serif`;
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(dateStr, W - 64, 58);
-      ctx.globalAlpha = 1;
+    if (kicker) {
+      drawDynamicBadge(ctx, kicker, 64, 34, 48, pal.badgeBg, pal.badgeText, 8, 'left', 25);
     }
+    ctx.fillStyle = template.defaultTextColor || '#ffffff';
+    ctx.globalAlpha = 0.72;
+    ctx.font = `500 23px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, W - 64, 58);
+    ctx.globalAlpha = 1;
 
     drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
     ctx.strokeStyle = pal.borderColor;
@@ -1214,7 +1230,7 @@ function renderProceduralTemplateChrome(
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, pBox.x + 22, pBox.y - 24, 48, pal.badgeBg, pal.badgeText, 24, 'left', 25);
     }
 
@@ -1245,7 +1261,7 @@ function renderProceduralTemplateChrome(
     ctx.lineWidth = 3;
     ctx.strokeRect(32, 32, W - 64, H - 64);
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, W / 2, 16, 56, pal.badgeBg, pal.badgeText, 28, 'center', 28);
     }
 
@@ -1259,15 +1275,13 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(32, H - 112, W - 64, 80);
-    if (!hideDefaultBrand) {
-      ctx.fillStyle = pal.footerText;
-      ctx.globalAlpha = 0.78;
-      ctx.font = `600 21px 'Hind Siliguri', sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(dateStr, 64, H - 72);
-      ctx.globalAlpha = 1;
-    }
+    ctx.fillStyle = pal.footerText;
+    ctx.globalAlpha = 0.78;
+    ctx.font = `600 21px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 64, H - 72);
+    ctx.globalAlpha = 1;
     if (ctaText) {
       ctx.fillStyle = pal.footerText;
       ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
@@ -1291,7 +1305,7 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = pal.accent;
     ctx.fillRect(0, 0, W, 92);
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, 56, 20, 52, pal.badgeBg, pal.badgeText, 10, 'left', 27);
     }
 
@@ -1315,15 +1329,13 @@ function renderProceduralTemplateChrome(
       ctx.fillText(ctaText, W / 2, H - 68);
     }
 
-    if (!hideDefaultBrand) {
-      ctx.fillStyle = template.defaultTextColor || '#ffffff';
-      ctx.globalAlpha = 0.85;
-      ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(dateStr, W - 56, H - 68);
-      ctx.globalAlpha = 1;
-    }
+    ctx.fillStyle = template.defaultTextColor || '#ffffff';
+    ctx.globalAlpha = 0.85;
+    ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, W - 56, H - 68);
+    ctx.globalAlpha = 1;
 
     return {
       x: 852,
@@ -1352,7 +1364,7 @@ function renderProceduralTemplateChrome(
       ctx.stroke();
     }
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, 58, 30, 50, pal.badgeBg, pal.badgeText, 8, 'left', 26);
     }
 
@@ -1378,13 +1390,7 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 84, W, 84);
-    const footerLine = ctaText
-      ? hideDefaultBrand
-        ? ctaText
-        : `${dateStr}  •  ${ctaText}`
-      : hideDefaultBrand
-        ? ''
-        : dateStr;
+    const footerLine = ctaText ? `${dateStr}  •  ${ctaText}` : dateStr;
     if (footerLine) {
       ctx.fillStyle = pal.footerText;
       ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
@@ -1962,12 +1968,14 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = '#f4efe2';
     ctx.fillRect(0, H - 135, W, 135);
 
-    // Centered semicircular upward notch
-    ctx.beginPath();
-    ctx.arc(W / 2, seamY, 96, Math.PI, 0, false);
-    ctx.closePath();
-    ctx.fillStyle = '#faf7ee';
-    ctx.fill();
+    if (hasActiveLogo) {
+      // Centered semicircular upward notch for logo emblem
+      ctx.beginPath();
+      ctx.arc(W / 2, seamY, 96, Math.PI, 0, false);
+      ctx.closePath();
+      ctx.fillStyle = '#faf7ee';
+      ctx.fill();
+    }
 
     if (kicker) {
       ctx.fillStyle = '#374151';
@@ -2023,12 +2031,14 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = '#f1f3f5';
     ctx.fillRect(0, seamY, W, H - 96 - seamY);
 
-    // Centered semicircular upward notch
-    ctx.beginPath();
-    ctx.arc(W / 2, seamY, 96, Math.PI, 0, false);
-    ctx.closePath();
-    ctx.fillStyle = '#f1f3f5';
-    ctx.fill();
+    if (hasActiveLogo) {
+      // Centered semicircular upward notch for logo emblem
+      ctx.beginPath();
+      ctx.arc(W / 2, seamY, 96, Math.PI, 0, false);
+      ctx.closePath();
+      ctx.fillStyle = '#f1f3f5';
+      ctx.fill();
+    }
 
     // Footer gray bar
     ctx.fillStyle = '#e5e7eb';
@@ -2189,16 +2199,18 @@ function renderProceduralTemplateChrome(
       ctx.stroke();
     }
 
-    // Centered circular white emblem overlapping seam
-    ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetY = 3;
-    ctx.beginPath();
-    ctx.arc(W / 2, seamY, 68, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.restore();
+    if (hasActiveLogo) {
+      // Centered circular white emblem overlapping seam
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 3;
+      ctx.beginPath();
+      ctx.arc(W / 2, seamY, 68, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+    }
 
     return {
       x: W / 2 - 60,
@@ -2472,7 +2484,7 @@ function renderProceduralTemplateChrome(
     ctx.lineWidth = 4;
     ctx.strokeRect(pBox.x, pBox.y, pBox.width, pBox.height);
 
-    if (!hideDefaultBrand && kicker) {
+    if (kicker) {
       drawDynamicBadge(ctx, kicker, pBox.x + 24, pBox.y + 24, 50, pal.badgeBg, pal.badgeText, 8, 'left', 26);
     }
 
@@ -2669,6 +2681,9 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
   let brandSlot: BrandLogoSlot;
   let psdOverlayDrawsBakedLogo = false;
 
+  const hasCustomLogo = Boolean(logoSettings.dataUrl && logoImg && logoImg.naturalWidth > 0);
+  const hasLogoIntent = hasCustomLogo || !logoSettings.hideDefaultBrand;
+
   // 1. Render Photo + Template Artwork
   if (template.styleType === 'psd-overlay') {
     brandSlot = getPsdBrandLogoSlot(template);
@@ -2705,17 +2720,12 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
         W,
         H,
         template.photoBox,
-        logoSettings.hideDefaultBrand
+        logoSettings.hideDefaultBrand,
+        hasLogoIntent
       );
     }
 
-    // Crisp frame border around the photo window
-    ctx.strokeStyle = template.id === 'psd-green' ? '#ffffff' : 'rgba(255, 255, 255, 0.9)';
-    ctx.lineWidth = template.id === 'psd-green' ? 4 : 3;
-    ctx.strokeRect(template.photoBox.x, template.photoBox.y, template.photoBox.width, template.photoBox.height);
-
     const badgeMode: LogoBadgeStyle = logoSettings.badgeStyle ?? 'none';
-    const hasCustomLogo = Boolean(logoSettings.dataUrl && logoImg && logoImg.naturalWidth > 0);
     const hasLogoTransform =
       logoSettings.scale !== 100 ||
       logoSettings.x !== 0 ||
@@ -2725,10 +2735,19 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
       badgeMode === 'frosted' ||
       (badgeMode === 'auto' && brandSlot.surfaceIsDark);
 
-    if (logoSettings.hideDefaultBrand && !hasCustomLogo && template.defaultBrandMask) {
-      for (const r of template.defaultBrandMask.rects) {
-        ctx.fillStyle = r.fill;
-        ctx.fillRect(r.x, r.y, r.width, r.height);
+    if (logoSettings.hideDefaultBrand) {
+      if (template.id === 'psd-maroon') {
+        if (psdOverlayDrawsBakedLogo) {
+          const movedOutOfNotch = Math.abs(logoSettings.x) > 10 || Math.abs(logoSettings.y) > 8;
+          maskMaroonBakedLogoRegion(ctx, !hasCustomLogo || movedOutOfNotch);
+          psdOverlayDrawsBakedLogo = false;
+        }
+      } else if (template.defaultBrandMask) {
+        for (const r of template.defaultBrandMask.rects) {
+          ctx.fillStyle = r.fill;
+          ctx.fillRect(r.x, r.y, r.width, r.height);
+        }
+        psdOverlayDrawsBakedLogo = false;
       }
     } else if (
       psdOverlayDrawsBakedLogo &&
@@ -2740,11 +2759,16 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
         ctx.fillRect(1290, 1790, 650, 195);
         psdOverlayDrawsBakedLogo = false;
       } else if (template.id === 'psd-maroon') {
-        ctx.fillStyle = '#5a0b22';
-        ctx.fillRect(366, 6, 348, 74);
+        const movedOutOfNotch = Math.abs(logoSettings.x) > 10 || Math.abs(logoSettings.y) > 8;
+        maskMaroonBakedLogoRegion(ctx, movedOutOfNotch);
         psdOverlayDrawsBakedLogo = false;
       }
     }
+
+    // Crisp frame border around the photo window (drawn after logo mask so border stays razor-sharp)
+    ctx.strokeStyle = template.id === 'psd-green' ? '#ffffff' : 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = template.id === 'psd-green' ? 4 : 3;
+    ctx.strokeRect(template.photoBox.x, template.photoBox.y, template.photoBox.width, template.photoBox.height);
 
     // Optional category/kicker badge if user customized kickerText on a PSD overlay template
     if (template.kickerText && template.kickerText.trim()) {
@@ -2773,7 +2797,7 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
       photoZoom,
       photoPanX,
       photoPanY,
-      logoSettings.hideDefaultBrand,
+      hasLogoIntent,
       isExport
     );
   }

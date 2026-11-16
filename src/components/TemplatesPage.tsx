@@ -12,6 +12,7 @@ import {
   Search,
   Sparkles,
   Tag,
+  Trash2,
   X,
 } from 'lucide-react';
 import { ALL_TEMPLATES, TEMPLATE_CATEGORIES } from '../data/templates';
@@ -239,6 +240,7 @@ interface TemplatesPageProps {
   officialLogoImg: HTMLImageElement | null;
   logoSettings: LogoSettings;
   onChangeLogoBadgeStyle: (badgeStyle: LogoBadgeStyle) => void;
+  onToggleDefaultLogo: () => void;
   headline: string;
   highlights: HighlightRange[];
   activeFont: FontOption;
@@ -264,6 +266,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
   officialLogoImg,
   logoSettings,
   onChangeLogoBadgeStyle,
+  onToggleDefaultLogo,
   headline,
   highlights,
   activeFont,
@@ -438,35 +441,59 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="inline-flex items-center gap-1 rounded-lg border border-[#e2dcd1] bg-[#f4eee4] p-0.5 text-xs dark:border-slate-700 dark:bg-slate-900">
-              <span className="px-2 font-semibold text-[#57534e] whitespace-nowrap dark:text-slate-300">
-                লোগো ব্যাজ:
-              </span>
-              {(
-                [
-                  { id: 'none', label: 'ব্যাজ ছাড়া' },
-                  { id: 'frosted', label: 'হালকা গ্লাস' },
-                  { id: 'white', label: 'সাদা ব্যাজ' },
-                  { id: 'auto', label: 'অটো ব্যাজ' },
-                ] as const
-              ).map((opt) => {
-                const active = (logoSettings.badgeStyle ?? 'none') === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => onChangeLogoBadgeStyle(opt.id)}
-                    className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
-                      active
-                        ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
-                        : 'text-slate-700 hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
+            {(logoSettings.dataUrl || !logoSettings.hideDefaultBrand) && (
+              <div className="inline-flex items-center gap-1 rounded-lg border border-[#e2dcd1] bg-[#f4eee4] p-0.5 text-xs dark:border-slate-700 dark:bg-slate-900">
+                <span className="px-2 font-semibold text-[#57534e] whitespace-nowrap dark:text-slate-300">
+                  লোগো ব্যাজ:
+                </span>
+                {(
+                  [
+                    { id: 'none', label: 'ব্যাজ ছাড়া' },
+                    { id: 'frosted', label: 'হালকা গ্লাস' },
+                    { id: 'white', label: 'সাদা ব্যাজ' },
+                    { id: 'auto', label: 'অটো ব্যাজ' },
+                  ] as const
+                ).map((opt) => {
+                  const active = (logoSettings.badgeStyle ?? 'none') === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => onChangeLogoBadgeStyle(opt.id)}
+                      className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                        active
+                          ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                          : 'text-slate-700 hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={onToggleDefaultLogo}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                !logoSettings.dataUrl && logoSettings.hideDefaultBrand
+                  ? 'border-[#1c3060] bg-[#eef3ff] text-[#1c3060] hover:bg-[#dfe8ff] dark:border-sky-500 dark:bg-sky-950/60 dark:text-sky-200'
+                  : 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-800/80 dark:bg-red-950/50 dark:text-red-300 dark:hover:bg-red-950/80'
+              }`}
+            >
+              {!logoSettings.dataUrl && logoSettings.hideDefaultBrand ? (
+                <>
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>ডিফল্ট লোগো ফিরিয়ে আনুন</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>{logoSettings.dataUrl ? 'লোগো রিমুভ' : 'ডিফল্ট লোগো রিমুভ'}</span>
+                </>
+              )}
+            </button>
 
             <p className="text-xs font-semibold text-[#6b655e] tabular-nums whitespace-nowrap dark:text-slate-400">
               দেখানো হচ্ছে {filteredTemplates.length}টি টেমপ্লেট

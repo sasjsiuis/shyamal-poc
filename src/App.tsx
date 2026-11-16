@@ -55,6 +55,7 @@ const THEME_STORAGE_KEY = 'news_card_theme_mode_v1';
 const CATEGORY_NAMES_STORAGE_KEY = 'news_card_category_names_v1';
 const TEMPLATE_OVERRIDES_STORAGE_KEY = 'news_card_template_overrides_v1';
 const CARD_AUTOSAVE_STORAGE_KEY = 'news_card_autosave_v1';
+const DEFAULT_PHOTO_SRC = '/assets/aistudio/5329_21a6eb86.png';
 
 interface SavedCardState {
   version: 1 | 2;
@@ -172,9 +173,12 @@ function loadSavedCardState(): SavedCardState | null {
           ? parsed.highlightColor
           : resolvedTemplate.defaultHighlightColor,
       photoSrc:
-        typeof parsed.photoSrc === 'string' && parsed.photoSrc
+        typeof parsed.photoSrc === 'string' &&
+        parsed.photoSrc &&
+        parsed.photoSrc !== '/sample/parliament.jpg' &&
+        parsed.photoSrc !== '/sample/yunus_nahid.jpg'
           ? parsed.photoSrc
-          : '/sample/parliament.jpg',
+          : DEFAULT_PHOTO_SRC,
       photoZoom: clampNumber(parsed.photoZoom, 1, 3, 1),
       photoPanX: clampNumber(parsed.photoPanX, -100, 100, 0),
       photoPanY: clampNumber(parsed.photoPanY, -100, 100, 0),
@@ -226,7 +230,7 @@ function persistCardState(state: SavedCardState): void {
   if (withoutLogoData.photoSrc.startsWith('data:')) {
     tryWrite({
       ...withoutLogoData,
-      photoSrc: '/sample/parliament.jpg',
+      photoSrc: DEFAULT_PHOTO_SRC,
     });
   }
 }
@@ -734,9 +738,9 @@ export default function App() {
     () => initialSavedCard?.highlightColor ?? PSD_GREEN_TEMPLATE.defaultHighlightColor
   );
 
-  // Photo state & controls — initialized from auto-saved state or sample card photo
+  // Photo state & controls — initialized from auto-saved state or default sample card photo
   const [photoSrc, setPhotoSrc] = useState<string>(
-    () => initialSavedCard?.photoSrc ?? '/sample/parliament.jpg'
+    () => initialSavedCard?.photoSrc ?? DEFAULT_PHOTO_SRC
   );
   const [photoImg, setPhotoImg] = useState<HTMLImageElement | null>(null);
   const [photoZoom, setPhotoZoom] = useState<number>(() => initialSavedCard?.photoZoom ?? 1);
@@ -1151,7 +1155,7 @@ export default function App() {
         ) {
           setHeadline('নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস');
           setHighlights([{ id: 'sample-hl-2', start: 29, end: 40, text: 'একটি ইতিহাস' }]);
-          setPhotoSrc('/sample/yunus_nahid.jpg');
+          setPhotoSrc(DEFAULT_PHOTO_SRC);
           setPhotoZoom(1);
           setPhotoPanX(0);
           setPhotoPanY(0);
@@ -1163,7 +1167,7 @@ export default function App() {
         ) {
           setHeadline('ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ');
           setHighlights([{ id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' }]);
-          setPhotoSrc('/sample/parliament.jpg');
+          setPhotoSrc(DEFAULT_PHOTO_SRC);
           setPhotoZoom(1);
           setPhotoPanX(0);
           setPhotoPanY(0);
@@ -1574,7 +1578,7 @@ export default function App() {
         ? [{ id: 'sample-hl-2', start: 29, end: 40, text: 'একটি ইতিহাস' }]
         : [{ id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' }]
     );
-    setPhotoSrc(isMaroon ? '/sample/yunus_nahid.jpg' : '/sample/parliament.jpg');
+    setPhotoSrc(DEFAULT_PHOTO_SRC);
     setPhotoZoom(1);
     setPhotoPanX(0);
     setPhotoPanY(0);
@@ -1975,6 +1979,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
+        commitHistoryNow();
         setLogoSettings((prev) => ({
           ...prev,
           dataUrl: reader.result as string,
@@ -2294,6 +2299,15 @@ export default function App() {
             onChangeLogoBadgeStyle={(badgeStyle) =>
               setLogoSettings((prev) => ({ ...prev, badgeStyle }))
             }
+            onToggleDefaultLogo={() => {
+              commitHistoryNow();
+              setLogoSettings((prev) => {
+                if (prev.dataUrl) {
+                  return { ...prev, dataUrl: null, hideDefaultBrand: true };
+                }
+                return { ...prev, hideDefaultBrand: !prev.hideDefaultBrand };
+              });
+            }}
             headline={headline}
             highlights={highlights}
             activeFont={activeFont}
@@ -2406,17 +2420,8 @@ export default function App() {
                     />
                   </div>
 
-                  {/* Active Template Metadata + Quick Export Format */}
-                  <div className="mt-2.5 flex items-center justify-between gap-2 px-1 text-xs">
-                    <p className="min-w-0 truncate text-[#57534e] dark:text-slate-300">
-                      <span className="font-bold text-[#1c3060] dark:text-sky-300">
-                        {effectiveTemplate.name}
-                      </span>
-                      <span className="mx-1.5 text-slate-400">·</span>
-                      <span>
-                        {categoryNames[effectiveTemplate.category] || effectiveTemplate.category}
-                      </span>
-                    </p>
+                  {/* Quick Export Format */}
+                  <div className="mt-2.5 flex items-center justify-end gap-2 px-1 text-xs">
                     <div className="inline-flex shrink-0 items-center gap-1">
                       {(['png', 'jpeg'] as const).map((fmt) => (
                         <button
@@ -3216,11 +3221,11 @@ export default function App() {
                         {logoSettings.dataUrl
                           ? 'কাস্টম লোগো সব কার্ডে সক্রিয় আছে'
                           : logoSettings.hideDefaultBrand
-                            ? 'ডিফল্ট লোগো সাময়িকভাবে লুকানো আছে'
+                            ? 'ডিফল্ট লোগো রিমুভ করা আছে (লোগো ছাড়া কার্ড)'
                             : 'অফিসিয়াল শ্যামল সিলেট লোগো সব কার্ডে সক্রিয় আছে'}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => logoInputRef.current?.click()}
@@ -3229,125 +3234,176 @@ export default function App() {
                         <Plus className="h-3.5 w-3.5" />
                         <span>{logoSettings.dataUrl ? 'লোগো বদলান' : 'কাস্টম লোগো দিন'}</span>
                       </button>
-                      {logoSettings.dataUrl && (
+
+                      {logoSettings.dataUrl ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              commitHistoryNow();
+                              setLogoSettings((prev) => ({
+                                ...prev,
+                                dataUrl: null,
+                                hideDefaultBrand: false,
+                              }));
+                            }}
+                            className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#c9c5c0] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1c3060] hover:bg-[#f4eee4] whitespace-nowrap shrink-0 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span>অফিসিয়াল লোগো</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              commitHistoryNow();
+                              setLogoSettings((prev) => ({
+                                ...prev,
+                                dataUrl: null,
+                                hideDefaultBrand: true,
+                              }));
+                            }}
+                            className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 whitespace-nowrap shrink-0 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>লোগো রিমুভ</span>
+                          </button>
+                        </>
+                      ) : logoSettings.hideDefaultBrand ? (
                         <button
                           type="button"
-                          onClick={() =>
+                          onClick={() => {
+                            commitHistoryNow();
                             setLogoSettings((prev) => ({
                               ...prev,
-                              dataUrl: null,
-                            }))
-                          }
-                          className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 whitespace-nowrap shrink-0 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
+                              hideDefaultBrand: false,
+                            }));
+                          }}
+                          className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#1c3060] bg-[#eef3ff] px-3 py-1.5 text-xs font-bold text-[#1c3060] hover:bg-[#dfe8ff] whitespace-nowrap shrink-0 dark:border-sky-500 dark:bg-sky-950/60 dark:text-sky-200"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          <span>ডিফল্ট লোগো ফিরিয়ে আনুন</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            commitHistoryNow();
+                            setLogoSettings((prev) => ({
+                              ...prev,
+                              hideDefaultBrand: true,
+                            }));
+                          }}
+                          className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 whitespace-nowrap shrink-0 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          <span>অফিসিয়াল লোগোতে ফিরুন</span>
+                          <span>ডিফল্ট লোগো রিমুভ</span>
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Dark Background Badge Adjustment */}
-                  <div>
-                    <p className="mb-2 text-xs font-semibold text-[#57534e] dark:text-slate-300">
-                      লোগো ব্যাকগ্রাউন্ড (গাঢ় কার্ডে দৃশ্যমানতা)
-                    </p>
-                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                      {(
-                        [
-                          { id: 'none', label: 'ব্যাজ ছাড়া' },
-                          { id: 'frosted', label: 'হালকা গ্লাস' },
-                          { id: 'white', label: 'সাদা ব্যাজ' },
-                          { id: 'auto', label: 'অটো ব্যাজ' },
-                        ] as const
-                      ).map((opt) => {
-                        const active = (logoSettings.badgeStyle ?? 'none') === opt.id;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() =>
-                              setLogoSettings((prev) => ({ ...prev, badgeStyle: opt.id }))
-                            }
-                            className={`cursor-pointer rounded-lg px-2.5 py-2 text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
-                              active
-                                ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
-                                : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1e293b] hover:bg-[#ebe3d6] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Size & Position Controls (active whenever official or custom logo is shown) */}
+                  {/* Dark Background Badge + Size & Position Controls (active whenever official or custom logo is shown) */}
                   {(logoSettings.dataUrl || !logoSettings.hideDefaultBrand) && (
-                    <div className="space-y-3 pt-1">
+                    <>
                       <div>
-                        <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <p className="text-xs font-semibold text-[#57534e] tabular-nums dark:text-slate-300">
-                            লোগোর আকার ({logoSettings.scale}%)
-                          </p>
-                          {(logoSettings.scale !== 100 ||
-                            logoSettings.x !== 0 ||
-                            logoSettings.y !== 0 ||
-                            (logoSettings.badgeStyle ?? 'none') !== 'none') && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setLogoSettings((prev) => ({
-                                  ...prev,
-                                  scale: 100,
-                                  x: 0,
-                                  y: 0,
-                                  badgeStyle: 'none',
-                                }))
-                              }
-                              className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-semibold text-[#1c3060] hover:underline dark:text-sky-300"
-                            >
-                              <RotateCcw className="h-3 w-3" />
-                              <span>ডিফল্ট পজিশন</span>
-                            </button>
-                          )}
+                        <p className="mb-2 text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                          লোগো ব্যাকগ্রাউন্ড (গাঢ় কার্ডে দৃশ্যমানতা)
+                        </p>
+                        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                          {(
+                            [
+                              { id: 'none', label: 'ব্যাজ ছাড়া' },
+                              { id: 'frosted', label: 'হালকা গ্লাস' },
+                              { id: 'white', label: 'সাদা ব্যাজ' },
+                              { id: 'auto', label: 'অটো ব্যাজ' },
+                            ] as const
+                          ).map((opt) => {
+                            const active = (logoSettings.badgeStyle ?? 'none') === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() =>
+                                  setLogoSettings((prev) => ({ ...prev, badgeStyle: opt.id }))
+                                }
+                                className={`cursor-pointer rounded-lg px-2.5 py-2 text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                                  active
+                                    ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                                    : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1e293b] hover:bg-[#ebe3d6] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
                         </div>
-                        <RangeSlider
-                          min={25}
-                          max={200}
-                          value={logoSettings.scale}
-                          onChange={(scale) => setLogoSettings((p) => ({ ...p, scale }))}
-                          ariaLabel="লোগোর আকার"
-                        />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-3 pt-1">
                         <div>
-                          <p className="mb-1.5 text-xs font-semibold text-[#57534e] dark:text-slate-300">
-                            লোগো ডানে-বামে
-                          </p>
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold text-[#57534e] tabular-nums dark:text-slate-300">
+                              লোগোর আকার ({logoSettings.scale}%)
+                            </p>
+                            {(logoSettings.scale !== 100 ||
+                              logoSettings.x !== 0 ||
+                              logoSettings.y !== 0 ||
+                              (logoSettings.badgeStyle ?? 'none') !== 'none') && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setLogoSettings((prev) => ({
+                                    ...prev,
+                                    scale: 100,
+                                    x: 0,
+                                    y: 0,
+                                    badgeStyle: 'none',
+                                  }))
+                                }
+                                className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-semibold text-[#1c3060] hover:underline dark:text-sky-300"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                <span>ডিফল্ট পজিশন</span>
+                              </button>
+                            )}
+                          </div>
                           <RangeSlider
-                            min={-100}
-                            max={100}
-                            value={logoSettings.x}
-                            onChange={(x) => setLogoSettings((p) => ({ ...p, x }))}
-                            ariaLabel="লোগো ডানে-বামে"
+                            min={25}
+                            max={200}
+                            value={logoSettings.scale}
+                            onChange={(scale) => setLogoSettings((p) => ({ ...p, scale }))}
+                            ariaLabel="লোগোর আকার"
                           />
                         </div>
-                        <div>
-                          <p className="mb-1.5 text-xs font-semibold text-[#57534e] dark:text-slate-300">
-                            লোগো উপরে-নিচে
-                          </p>
-                          <RangeSlider
-                            min={-100}
-                            max={100}
-                            value={logoSettings.y}
-                            onChange={(y) => setLogoSettings((p) => ({ ...p, y }))}
-                            ariaLabel="লোগো উপরে-নিচে"
-                          />
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="mb-1.5 text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                              লোগো ডানে-বামে
+                            </p>
+                            <RangeSlider
+                              min={-100}
+                              max={100}
+                              value={logoSettings.x}
+                              onChange={(x) => setLogoSettings((p) => ({ ...p, x }))}
+                              ariaLabel="লোগো ডানে-বামে"
+                            />
+                          </div>
+                          <div>
+                            <p className="mb-1.5 text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                              লোগো উপরে-নিচে
+                            </p>
+                            <RangeSlider
+                              min={-100}
+                              max={100}
+                              value={logoSettings.y}
+                              onChange={(y) => setLogoSettings((p) => ({ ...p, y }))}
+                              ariaLabel="লোগো উপরে-নিচে"
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </>
                   )}
 
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#ebe5da] pt-2.5 dark:border-slate-700/70">
@@ -3355,12 +3411,13 @@ export default function App() {
                       <input
                         type="checkbox"
                         checked={logoSettings.hideDefaultBrand}
-                        onChange={(e) =>
-                          setLogoSettings((p) => ({ ...p, hideDefaultBrand: e.target.checked }))
-                        }
+                        onChange={(e) => {
+                          commitHistoryNow();
+                          setLogoSettings((p) => ({ ...p, hideDefaultBrand: e.target.checked }));
+                        }}
                         className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-[#1c3060]"
                       />
-                      <span>ডিফল্ট লোগো ও ব্র্যান্ডিং লুকান</span>
+                      <span>ডিফল্ট লোগো রিমুভ / লুকিয়ে রাখুন</span>
                     </label>
 
                     <div className="inline-flex items-center gap-1.5">

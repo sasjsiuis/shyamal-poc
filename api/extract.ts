@@ -114,7 +114,7 @@ function cleanHeadline(rawTitle: string, siteName?: string): string {
 
 function resolveMaybeUrl(candidate: string | undefined | null, baseUrl: string): string {
   if (!candidate) return '';
-  const cleaned = decodeHtmlEntities(candidate).trim();
+  const cleaned = decodeHtmlEntities(candidate).trim().replace(/ /g, '%20');
   if (!cleaned || cleaned.startsWith('data:image/svg') || cleaned.startsWith('javascript:')) {
     return '';
   }
@@ -127,6 +127,14 @@ function resolveMaybeUrl(candidate: string | undefined | null, baseUrl: string):
     return '';
   }
   return '';
+}
+
+function isErrorOrChallengeTitle(title: string): boolean {
+  const t = title.trim();
+  if (!t) return true;
+  return /^(just a moment|attention required|access denied|403 forbidden|cloudflare|security check|page not found|404\b|error\s*404|nothing found|not found)/i.test(
+    t
+  ) || /\b404\s*[-–|:]\s*(nothing found|not found|page not found)/i.test(t);
 }
 
 interface ExtractedMeta {
@@ -147,7 +155,8 @@ function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta {
       tag.match(/(?:property|name|itemprop)\s*=\s*["']([^"']+)["']/i) ||
       tag.match(/(?:property|name|itemprop)\s*=\s*([^\s>]+)/i);
     const contentMatch =
-      tag.match(/content\s*=\s*["']([^"']*)["']/i) ||
+      tag.match(/content\s*=\s*"([^"]*)"/i) ||
+      tag.match(/content\s*=\s*'([^']*)'/i) ||
       tag.match(/content\s*=\s*([^\s>]+)/i);
     if (keyMatch && contentMatch) {
       const k = keyMatch[1].toLowerCase().trim();
@@ -217,8 +226,8 @@ function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta {
   const rawTitleCandidate =
     metaMap['og:title'] || ldTitle || metaMap['twitter:title'] || h1Title || metaMap['title'] || docTitle;
   title = cleanHeadline(rawTitleCandidate, siteName);
-  if (/^(just a moment|attention required|access denied|403 forbidden|cloudflare|security check|page not found|404)/i.test(title)) {
-    title = '';
+  if (isErrorOrChallengeTitle(title)) {
+    return { title: '', image: '', siteName: '' };
   }
 
   const linkImgMatch = html.match(/<link[^>]+rel\s*=\s*["']image_src["'][^>]+href\s*=\s*["']([^"']+)["']/i);
@@ -235,7 +244,7 @@ function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta {
 
   for (const cand of rawImgCandidates) {
     const resolved = resolveMaybeUrl(cand, pageUrl);
-    if (resolved && !/logo|favicon|icon|avatar|sprite|blank\.gif|1x1/i.test(resolved)) {
+    if (resolved && !/favicon|sprite|blank\.gif|1x1|logo-fb|default-og/i.test(resolved)) {
       image = resolved;
       break;
     }
@@ -263,7 +272,7 @@ function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta {
   return { title, image, siteName };
 }
 
-async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs = 5500): Promise<ExtractedMeta> {
+async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs = 4500): Promise<ExtractedMeta> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -324,7 +333,44 @@ async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs = 5500)
   }
 }
 
-async function fetchViaMicrolink(url: string, timeoutMs = 4200): Promise<ExtractedMeta> {
+async function fetchBestDirectMeta(href: string): Promise<ExtractedMeta> {
+  const uas = [
+    'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+    'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)',
+    'WhatsApp/2.23.20.0 A',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  ];
+
+  return new Promise((resolve) => {
+    let best: ExtractedMeta = { title: '', image: '', siteName: '' };
+    let settled = false;
+    let remaining = uas.length;
+
+    for (const ua of uas) {
+      fetchHtmlWithUA(href, ua, 4400)
+        .then((res) => {
+          if (settled) return;
+          if (!best.title && res.title) best.title = res.title;
+          if (!best.image && res.image) best.image = res.image;
+          if (!best.siteName && res.siteName) best.siteName = res.siteName;
+          if (best.title && best.image) {
+            settled = true;
+            resolve(best);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          remaining -= 1;
+          if (!settled && remaining <= 0) {
+            settled = true;
+            resolve(best);
+          }
+        });
+    }
+  });
+}
+
+async function fetchViaMicrolink(url: string, timeoutMs = 3800): Promise<ExtractedMeta> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -339,9 +385,13 @@ async function fetchViaMicrolink(url: string, timeoutMs = 4200): Promise<Extract
     };
     if (json?.status === 'success' && json.data) {
       const siteName = json.data.publisher || '';
+      const cleanedTitle = cleanHeadline(json.data.title || '', siteName);
+      if (isErrorOrChallengeTitle(cleanedTitle)) {
+        return { title: '', image: '', siteName: '' };
+      }
       const img = typeof json.data.image === 'string' ? json.data.image : json.data.image?.url || '';
       return {
-        title: cleanHeadline(json.data.title || '', siteName),
+        title: cleanedTitle,
         image: resolveMaybeUrl(img, url),
         siteName,
       };
@@ -354,7 +404,7 @@ async function fetchViaMicrolink(url: string, timeoutMs = 4200): Promise<Extract
   }
 }
 
-async function fetchViaAllOrigins(url: string, timeoutMs = 4200): Promise<ExtractedMeta> {
+async function fetchViaAllOrigins(url: string, timeoutMs = 3800): Promise<ExtractedMeta> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -365,6 +415,37 @@ async function fetchViaAllOrigins(url: string, timeoutMs = 4200): Promise<Extrac
     if (!resp.ok) return { title: '', image: '', siteName: '' };
     const html = (await resp.text()).slice(0, 1_000_000);
     return parseHtmlMetadata(html, url);
+  } catch {
+    return { title: '', image: '', siteName: '' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchViaJina(url: string, timeoutMs = 3800): Promise<ExtractedMeta> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(`https://r.jina.ai/${url}`, {
+      signal: controller.signal,
+      headers: { Accept: 'text/plain' },
+    });
+    if (!resp.ok) return { title: '', image: '', siteName: '' };
+    const text = (await resp.text()).slice(0, 100_000);
+    const titleMatch = text.match(/^Title:\s*(.+)$/m);
+    const rawTitle = titleMatch ? cleanHeadline(titleMatch[1].trim()) : '';
+    const title = isErrorOrChallengeTitle(rawTitle) ? '' : rawTitle;
+    let image = '';
+    const imgRegex = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = imgRegex.exec(text)) !== null) {
+      const candidate = resolveMaybeUrl(m[1], url);
+      if (candidate && !/logo|favicon|icon|avatar|sprite|\.svg/i.test(candidate)) {
+        image = candidate;
+        break;
+      }
+    }
+    return { title, image, siteName: '' };
   } catch {
     return { title: '', image: '', siteName: '' };
   } finally {
@@ -387,34 +468,6 @@ function extractYouTubeThumbnail(targetUrl: URL): string {
     return `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
   }
   return '';
-}
-
-function extractTitleFromSlug(targetUrl: URL): string {
-  try {
-    const segments = targetUrl.pathname
-      .split('/')
-      .map((s) => decodeURIComponent(s).trim())
-      .filter(Boolean);
-    const meaningful = segments
-      .map((seg) =>
-        seg
-          .replace(/\.(html?|php|aspx?|jsp)$/i, '')
-          .replace(/[-_]+/g, ' ')
-          .replace(/\b\d{5,}\b/g, '')
-          .replace(/\s+/g, ' ')
-          .trim()
-      )
-      .filter(
-        (seg) =>
-          seg.length > 6 &&
-          !/^(news|article|story|details|national|politics|sports|bangladesh|world|opinion)$/i.test(seg)
-      );
-    if (meaningful.length === 0) return '';
-    meaningful.sort((a, b) => b.length - a.length);
-    return meaningful[0];
-  } catch {
-    return '';
-  }
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -441,36 +494,20 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const safeUrl = await validateSafeExternalUrl(rawUrl);
     const href = safeUrl.href;
 
-    const [socialResult, whatsappResult, browserResult] = await Promise.all([
-      fetchHtmlWithUA(href, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', 5200),
-      fetchHtmlWithUA(href, 'WhatsApp/2.23.20.0 A', 5200),
-      fetchHtmlWithUA(
-        href,
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        5200
-      ),
-    ]);
-
-    let title = socialResult.title || whatsappResult.title || browserResult.title;
-    let image =
-      socialResult.image ||
-      whatsappResult.image ||
-      browserResult.image ||
-      extractYouTubeThumbnail(safeUrl);
-    let siteName = socialResult.siteName || whatsappResult.siteName || browserResult.siteName;
+    const direct = await fetchBestDirectMeta(href);
+    let title = direct.title;
+    let image = direct.image || extractYouTubeThumbnail(safeUrl);
+    let siteName = direct.siteName;
 
     if (!title || !image) {
-      const [ml, ao] = await Promise.all([
+      const [ml, ao, jina] = await Promise.all([
         fetchViaMicrolink(href, 3800),
         fetchViaAllOrigins(href, 3800),
+        fetchViaJina(href, 3800),
       ]);
-      if (!title) title = ml.title || ao.title;
-      if (!image) image = ml.image || ao.image;
+      if (!title) title = ml.title || ao.title || jina.title;
+      if (!image) image = ml.image || ao.image || jina.image;
       if (!siteName) siteName = ml.siteName || ao.siteName;
-    }
-
-    if (!title) {
-      title = extractTitleFromSlug(safeUrl);
     }
 
     let proxiedImage = '';

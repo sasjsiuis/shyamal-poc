@@ -40,6 +40,7 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
         category: ov.category || tpl.category,
         kickerText: ov.kickerText !== undefined ? ov.kickerText : tpl.kickerText,
         footerCtaText: ov.footerCtaText !== undefined ? ov.footerCtaText : tpl.footerCtaText,
+        websiteUrl: ov.websiteUrl !== undefined ? ov.websiteUrl : tpl.websiteUrl,
       };
     });
   }, [templateOverrides]);
@@ -214,7 +215,8 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
             tpl.styleType === 'top-band-white-footer' ||
             tpl.styleType === 'editorial-broadsheet' ||
             tpl.styleType === 'split-header-badge' ||
-            tpl.styleType === 'magazine-split';
+            tpl.styleType === 'magazine-split' ||
+            tpl.styleType === 'paper-ittefaq';
 
           const isVideoStyle = tpl.styleType === 'video-play-frame';
           const isArchStyle = tpl.styleType === 'islamic-arch';

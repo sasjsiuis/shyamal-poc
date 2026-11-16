@@ -473,6 +473,93 @@ function drawDynamicBadge(
   ctx.restore();
 }
 
+function drawGlobeIcon(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  color: string
+): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.5, r * 0.13);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, r * 0.46, r, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy);
+  ctx.lineTo(cx + r, cy);
+  ctx.moveTo(cx - r * 0.84, cy - r * 0.48);
+  ctx.lineTo(cx + r * 0.84, cy - r * 0.48);
+  ctx.moveTo(cx - r * 0.84, cy + r * 0.48);
+  ctx.lineTo(cx + r * 0.84, cy + r * 0.48);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawWebsiteWithGlobe(
+  ctx: CanvasRenderingContext2D,
+  urlText: string,
+  anchorX: number,
+  centerY: number,
+  align: 'left' | 'center' | 'right',
+  color: string,
+  fontSize = 25,
+  withGlobe = true
+): void {
+  const clean = urlText.trim();
+  if (!clean) return;
+  ctx.save();
+  ctx.font = `600 ${fontSize}px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'middle';
+
+  const textW = ctx.measureText(clean).width;
+  const r = Math.round(fontSize * 0.44);
+  const gap = withGlobe ? Math.round(fontSize * 0.36) : 0;
+  const totalW = withGlobe ? r * 2 + gap + textW : textW;
+
+  let startX = anchorX;
+  if (align === 'center') startX = anchorX - totalW / 2;
+  else if (align === 'right') startX = anchorX - totalW;
+
+  if (withGlobe) {
+    drawGlobeIcon(ctx, startX + r, centerY - 1, r, color);
+  }
+  ctx.textAlign = 'left';
+  ctx.fillText(clean, startX + (withGlobe ? r * 2 + gap : 0), centerY);
+  ctx.restore();
+}
+
+function drawHalftoneDots(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: string,
+  step = 18,
+  radius = 2.2
+): void {
+  ctx.save();
+  ctx.fillStyle = color;
+  for (let py = y; py < y + h; py += step) {
+    for (let px = x; px < x + w; px += step) {
+      if (((px * 19 + py * 37) % 100) < 42) {
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+}
+
 function needsLogoContrastBadge(color: string): boolean {
   const hex = color.trim().replace('#', '');
   let r = 0;
@@ -1317,6 +1404,1062 @@ function renderProceduralTemplateChrome(
       padX: 15,
       padY: 8,
     };
+  } else if (template.styleType === 'tv-jamuna') {
+    const seamY = pBox.y + pBox.height;
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    const redGrad = ctx.createLinearGradient(0, seamY, 0, H);
+    redGrad.addColorStop(0, '#dd0808');
+    redGrad.addColorStop(0.55, '#b60000');
+    redGrad.addColorStop(1, '#860000');
+    ctx.fillStyle = redGrad;
+    ctx.fillRect(0, seamY, W, H - seamY);
+
+    // Subtle light glow highlight
+    const glow = ctx.createRadialGradient(W * 0.5, seamY + 120, 20, W * 0.5, seamY + 120, 560);
+    glow.addColorStop(0, 'rgba(255, 255, 255, 0.09)');
+    glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, seamY, W, H - seamY);
+
+    // Right-aligned live date above thin white line
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `600 22px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(dateStr, W - 96, seamY + 40);
+
+    // Thin white horizontal rule
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+    ctx.fillRect(96, seamY + 48, W - 192, 2);
+
+    // Large faint quotation mark
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.30)';
+    ctx.font = `700 116px Georgia, serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('“', 96, seamY + 56);
+
+    // Crisp vertical white accent bar next to headline
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(96, seamY + 122, 4, 174);
+
+    // Optional attribution / kicker line below headline
+    if (kicker) {
+      ctx.fillStyle = '#fde68a';
+      ctx.font = `600 30px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, 131, seamY + 356);
+    }
+
+    // Bottom-left triangle arrow + editable website URL
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.52)';
+      ctx.beginPath();
+      ctx.moveTo(96, H - 92);
+      ctx.lineTo(116, H - 78);
+      ctx.lineTo(96, H - 64);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = `600 28px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(webUrl, 130, H - 78);
+    }
+
+    return {
+      x: 96,
+      y: seamY - 46,
+      maxWidth: 350,
+      maxHeight: 74,
+      align: 'left',
+      surfaceIsDark: true,
+      pillRadius: 12,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'tv-ekattor') {
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    const rightX = pBox.width;
+    const rightW = W - rightX;
+    const rightCenterX = rightX + rightW / 2;
+
+    const maroonGrad = ctx.createLinearGradient(rightX, 0, rightX, H - 74);
+    maroonGrad.addColorStop(0, '#7d0000');
+    maroonGrad.addColorStop(0.5, '#680000');
+    maroonGrad.addColorStop(1, '#4f0000');
+    ctx.fillStyle = maroonGrad;
+    ctx.fillRect(rightX, 0, rightW, H - 74);
+
+    drawHalftoneDots(ctx, rightX + 18, 24, rightW - 36, H - 120, 'rgba(0,0,0,0.22)', 16, 2.5);
+
+    if (kicker) {
+      ctx.fillStyle = '#facc15';
+      ctx.font = `700 36px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, rightCenterX, 192);
+    }
+
+    // Glowing gold horizontal line
+    const lineGrad = ctx.createLinearGradient(rightX + 24, 0, W - 24, 0);
+    lineGrad.addColorStop(0, 'rgba(245, 158, 11, 0)');
+    lineGrad.addColorStop(0.25, 'rgba(245, 158, 11, 0.92)');
+    lineGrad.addColorStop(0.75, 'rgba(245, 158, 11, 0.92)');
+    lineGrad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+    ctx.fillStyle = lineGrad;
+    ctx.fillRect(rightX + 24, 228, rightW - 48, 3);
+
+    if (ctaText) {
+      ctx.fillStyle = '#facc15';
+      ctx.font = `700 32px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, rightCenterX, H - 122);
+    }
+
+    // Crimson bottom strip
+    ctx.fillStyle = '#a60707';
+    ctx.fillRect(0, H - 74, W, 74);
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      drawWebsiteWithGlobe(ctx, webUrl, 42, H - 37, 'left', '#ffffff', 24, true);
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, W - 42, H - 37);
+
+    return {
+      x: rightX + (rightW - 330) / 2,
+      y: 34,
+      maxWidth: 330,
+      maxHeight: 100,
+      align: 'center',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 16,
+      padY: 8,
+    };
+  } else if (template.styleType === 'tv-independent') {
+    const seamY = pBox.y + pBox.height;
+
+    // Warm golden background + photo
+    const goldBg = ctx.createLinearGradient(0, 0, W, seamY);
+    goldBg.addColorStop(0, '#f7b844');
+    goldBg.addColorStop(1, '#e59420');
+    ctx.fillStyle = goldBg;
+    ctx.fillRect(0, 0, W, seamY);
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Lower deep navy box
+    ctx.fillStyle = '#081632';
+    ctx.fillRect(0, seamY, W, H - 74 - seamY);
+
+    // Subtle navy emblem ring in center
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+    ctx.lineWidth = 28;
+    ctx.beginPath();
+    ctx.arc(W / 2, seamY + 250, 175, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Crimson divider line at seam
+    ctx.fillStyle = '#c40f2a';
+    ctx.fillRect(0, seamY - 3, W, 7);
+
+    // Centered red CTA bar straddling seam
+    if (ctaText) {
+      ctx.save();
+      ctx.font = `700 30px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const tw = ctx.measureText(ctaText).width;
+      const bw = Math.max(300, Math.min(640, tw + 130));
+      const bh = 54;
+      const bx = (W - bw) / 2;
+      const by = seamY - bh / 2;
+
+      ctx.fillStyle = '#b90e1c';
+      drawRoundedRect(ctx, bx, by, bw, bh, 4);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx, by, bw, bh);
+
+      // Right white arrow square inside pill
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(bx + bw - 54, by + 4, 46, bh - 8);
+      ctx.fillStyle = '#b90e1c';
+      ctx.beginPath();
+      ctx.moveTo(bx + bw - 37, by + 16);
+      ctx.lineTo(bx + bw - 22, by + bh / 2);
+      ctx.lineTo(bx + bw - 37, by + bh - 16);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, bx + (bw - 50) / 2, seamY + 2);
+      ctx.restore();
+    }
+
+    if (kicker) {
+      ctx.fillStyle = '#facc15';
+      ctx.font = `600 22px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, W - 44, seamY + 42);
+    }
+
+    // Crimson footer bar
+    ctx.fillStyle = '#c40f2a';
+    ctx.fillRect(0, H - 74, W, 74);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 34, H - 37);
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `600 25px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(webUrl, W - 34, H - 37);
+    }
+
+    return {
+      x: 850,
+      y: 30,
+      maxWidth: 296,
+      maxHeight: 96,
+      align: 'right',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'tv-rtv') {
+    const seamY = pBox.y + pBox.height;
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Royal blue lower panel
+    const blueGrad = ctx.createLinearGradient(0, seamY, 0, H);
+    blueGrad.addColorStop(0, '#04368e');
+    blueGrad.addColorStop(1, '#011748');
+    ctx.fillStyle = blueGrad;
+    ctx.fillRect(0, seamY, W, H - seamY);
+
+    drawHalftoneDots(ctx, 24, seamY + 24, W - 48, H - seamY - 120, 'rgba(255,255,255,0.06)', 20, 2.2);
+
+    // Crimson divider band + centered rounded date pill
+    ctx.fillStyle = '#990f1e';
+    ctx.fillRect(0, seamY - 5, W, 10);
+
+    const pillW = 316;
+    const pillH = 48;
+    const pillX = (W - pillW) / 2;
+    const pillY = seamY - pillH / 2;
+    ctx.fillStyle = '#7f0b18';
+    drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 14);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1.5;
+    drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 14);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, W / 2, seamY + 1);
+
+    // Bottom row: website URL left + gold CTA center
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      drawWebsiteWithGlobe(ctx, webUrl, 54, H - 72, 'left', '#ffffff', 26, true);
+    }
+
+    if (ctaText) {
+      const bw = 320;
+      const bh = 46;
+      const bx = (W - bw) / 2;
+      const by = H - 72 - bh / 2;
+      ctx.fillStyle = '#000c29';
+      drawRoundedRect(ctx, bx, by, bw, bh, 8);
+      ctx.fill();
+
+      const borderGrad = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+      borderGrad.addColorStop(0, 'rgba(250, 204, 21, 0)');
+      borderGrad.addColorStop(0.5, 'rgba(250, 204, 21, 0.85)');
+      borderGrad.addColorStop(1, 'rgba(250, 204, 21, 0)');
+      ctx.fillStyle = borderGrad;
+      ctx.fillRect(bx, by, bw, 2);
+      ctx.fillRect(bx, by + bh - 2, bw, 2);
+
+      ctx.fillStyle = '#facc15';
+      ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 71);
+    }
+
+    return {
+      x: 40,
+      y: 32,
+      maxWidth: 260,
+      maxHeight: 90,
+      align: 'left',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'tv-desh') {
+    const emeraldGrad = ctx.createLinearGradient(0, 0, 0, H);
+    emeraldGrad.addColorStop(0, '#063b28');
+    emeraldGrad.addColorStop(0.55, '#042519');
+    emeraldGrad.addColorStop(1, '#260409');
+    ctx.fillStyle = emeraldGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle Bangladesh red sun brushstroke accent top-left
+    ctx.save();
+    const sunGrad = ctx.createRadialGradient(132, 136, 12, 132, 136, 76);
+    sunGrad.addColorStop(0, 'rgba(220, 38, 38, 0.92)');
+    sunGrad.addColorStop(0.68, 'rgba(220, 38, 38, 0.72)');
+    sunGrad.addColorStop(1, 'rgba(220, 38, 38, 0)');
+    ctx.fillStyle = sunGrad;
+    ctx.beginPath();
+    ctx.arc(132, 136, 76, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    drawHalftoneDots(ctx, W * 0.45, 40, W * 0.52, 460, 'rgba(255,255,255,0.08)', 20, 2.2);
+
+    // Lower blended photo
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Top smooth fade from emerald into photo
+    const topFade = ctx.createLinearGradient(0, pBox.y - 10, 0, pBox.y + 260);
+    topFade.addColorStop(0, 'rgba(6, 59, 40, 1)');
+    topFade.addColorStop(0.45, 'rgba(4, 37, 25, 0.72)');
+    topFade.addColorStop(1, 'rgba(4, 37, 25, 0)');
+    ctx.fillStyle = topFade;
+    ctx.fillRect(0, pBox.y - 10, W, 270);
+
+    // Bottom deep crimson vignette
+    const botFade = ctx.createLinearGradient(0, H * 0.65, 0, H);
+    botFade.addColorStop(0, 'rgba(80, 0, 8, 0)');
+    botFade.addColorStop(0.55, 'rgba(92, 0, 10, 0.78)');
+    botFade.addColorStop(1, 'rgba(72, 0, 8, 0.96)');
+    ctx.fillStyle = botFade;
+    ctx.fillRect(0, H * 0.65, W, H * 0.35);
+
+    if (kicker) {
+      ctx.fillStyle = '#facc15';
+      ctx.font = `700 34px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, W / 2, 650);
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `600 28px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, W / 2, H - 156);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.52)';
+    ctx.fillRect(W / 2 - 240, H - 106, 480, 2);
+
+    if (ctaText) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.86)';
+      ctx.font = `600 24px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 62);
+    }
+
+    return {
+      x: 845,
+      y: 36,
+      maxWidth: 305,
+      maxHeight: 92,
+      align: 'right',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'portal-ntv') {
+    ctx.fillStyle = '#f2ecde';
+    ctx.fillRect(0, 0, W, H);
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      ctx.fillStyle = '#4b5563';
+      ctx.font = `700 26px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(webUrl, W - 32, 38);
+    }
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+    ctx.strokeStyle = '#0f766e';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(pBox.x, pBox.y, pBox.width, pBox.height);
+
+    ctx.fillStyle = '#374151';
+    ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 34, H - 46);
+
+    if (ctaText) {
+      ctx.fillStyle = '#374151';
+      ctx.font = `600 24px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`*${ctaText}`, W - 34, H - 46);
+    }
+
+    return {
+      x: 42,
+      y: 36,
+      maxWidth: 230,
+      maxHeight: 88,
+      align: 'left',
+      surfaceIsDark: false,
+      pillRadius: 12,
+      padX: 12,
+      padY: 6,
+    };
+  } else if (template.styleType === 'tv-ekhon') {
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    const emScrim = ctx.createLinearGradient(0, H * 0.34, 0, H);
+    emScrim.addColorStop(0, 'rgba(3, 46, 36, 0)');
+    emScrim.addColorStop(0.38, 'rgba(3, 46, 36, 0.86)');
+    emScrim.addColorStop(0.72, 'rgba(2, 34, 27, 0.96)');
+    emScrim.addColorStop(1, '#011913');
+    ctx.fillStyle = emScrim;
+    ctx.fillRect(0, H * 0.34, W, H * 0.66);
+
+    if (kicker) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 34px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, W / 2, 650);
+    }
+
+    ctx.fillStyle = '#e5e7eb';
+    ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 38, H - 56);
+
+    if (ctaText) {
+      ctx.fillStyle = '#e5e7eb';
+      ctx.font = `600 24px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W - 38, H - 56);
+    }
+
+    return {
+      x: 845,
+      y: 34,
+      maxWidth: 305,
+      maxHeight: 92,
+      align: 'right',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'tv-somoy') {
+    ctx.fillStyle = '#f1f2f4';
+    ctx.fillRect(0, 0, W, H);
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Smooth fade from photo into light textured gray paper
+    const paperFade = ctx.createLinearGradient(0, 440, 0, 810);
+    paperFade.addColorStop(0, 'rgba(241, 242, 244, 0)');
+    paperFade.addColorStop(0.55, 'rgba(241, 242, 244, 0.78)');
+    paperFade.addColorStop(1, '#f1f2f4');
+    ctx.fillStyle = paperFade;
+    ctx.fillRect(0, 440, W, 380);
+
+    // Subtle halftone map texture + grid in lower half
+    drawHalftoneDots(ctx, 40, 740, W - 80, H - 780, 'rgba(15, 23, 42, 0.055)', 18, 2.3);
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.035)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 90) {
+      ctx.beginPath();
+      ctx.moveTo(x, 760);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+
+    // Crisp outer 4px crimson border
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, W - 6, H - 6);
+
+    if (kicker) {
+      ctx.fillStyle = '#1f2937';
+      ctx.font = `700 34px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, W / 2, 816);
+    }
+
+    // Thin centered red line below brand logo
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(W / 2 - 170, H - 122, 340, 2.5);
+
+    ctx.fillStyle = '#111827';
+    ctx.font = `600 26px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const somoyFooter = ctaText ? `${dateStr}  ।  ${ctaText}` : dateStr;
+    ctx.fillText(somoyFooter, W / 2, H - 70);
+
+    return {
+      x: W / 2 - 180,
+      y: H - 246,
+      maxWidth: 360,
+      maxHeight: 92,
+      align: 'center',
+      surfaceIsDark: false,
+      pillRadius: 12,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'paper-prothom-alo-1') {
+    const seamY = pBox.y + pBox.height;
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    ctx.fillStyle = '#faf7ee';
+    ctx.fillRect(0, seamY, W, H - seamY);
+
+    ctx.fillStyle = '#f4efe2';
+    ctx.fillRect(0, H - 135, W, 135);
+
+    // Centered semicircular upward notch
+    ctx.beginPath();
+    ctx.arc(W / 2, seamY, 96, Math.PI, 0, false);
+    ctx.closePath();
+    ctx.fillStyle = '#faf7ee';
+    ctx.fill();
+
+    if (kicker) {
+      ctx.fillStyle = '#374151';
+      ctx.font = `600 34px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, W / 2, seamY + 152);
+    }
+
+    if (ctaText) {
+      ctx.fillStyle = '#1f2937';
+      ctx.font = `500 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 220);
+    }
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      drawWebsiteWithGlobe(ctx, webUrl, W / 2, H - 68, 'center', '#374151', 28, true);
+    }
+
+    return {
+      x: W / 2 - 130,
+      y: seamY - 62,
+      maxWidth: 260,
+      maxHeight: 96,
+      align: 'center',
+      surfaceIsDark: false,
+      pillRadius: 16,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'paper-prothom-alo-2') {
+    const seamY = pBox.y + pBox.height;
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Subtle bottom dark vignette on photo for caption legibility
+    const photoVignette = ctx.createLinearGradient(0, seamY - 150, 0, seamY);
+    photoVignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    photoVignette.addColorStop(1, 'rgba(0, 0, 0, 0.56)');
+    ctx.fillStyle = photoVignette;
+    ctx.fillRect(0, seamY - 150, W, 150);
+
+    if (kicker) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `500 24px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, 48, seamY - 42);
+    }
+
+    ctx.fillStyle = '#f1f3f5';
+    ctx.fillRect(0, seamY, W, H - 96 - seamY);
+
+    // Centered semicircular upward notch
+    ctx.beginPath();
+    ctx.arc(W / 2, seamY, 96, Math.PI, 0, false);
+    ctx.closePath();
+    ctx.fillStyle = '#f1f3f5';
+    ctx.fill();
+
+    // Footer gray bar
+    ctx.fillStyle = '#e5e7eb';
+    ctx.fillRect(0, H - 96, W, 96);
+
+    ctx.fillStyle = '#374151';
+    ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 54, H - 48);
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      drawWebsiteWithGlobe(ctx, webUrl, W - 54, H - 48, 'right', '#374151', 26, true);
+    }
+
+    return {
+      x: W / 2 - 130,
+      y: seamY - 62,
+      maxWidth: 260,
+      maxHeight: 96,
+      align: 'center',
+      surfaceIsDark: false,
+      pillRadius: 16,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'portal-jagonews') {
+    const seamY = pBox.y + pBox.height;
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, seamY, W, H - seamY);
+
+    // Centered indigo capsule overlapping seam
+    const pillText = kicker ? `${kicker}  |  ${dateStr}` : dateStr;
+    ctx.save();
+    ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+    const pillTextW = ctx.measureText(pillText).width;
+    const pillW = Math.max(320, Math.min(720, pillTextW + 96));
+    const pillH = 56;
+    const pillX = (W - pillW) / 2;
+    const pillY = seamY - pillH / 2;
+    ctx.fillStyle = '#1d193a';
+    drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 28);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = 1.5;
+    drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 28);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(pillText, W / 2, seamY + 1);
+    ctx.restore();
+
+    // Short centered white rule
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(W / 2 - 56, H - 154, 112, 3);
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      drawWebsiteWithGlobe(ctx, webUrl, W / 2, H - 82, 'center', '#ffffff', 28, true);
+    }
+
+    return {
+      x: 845,
+      y: 34,
+      maxWidth: 305,
+      maxHeight: 78,
+      align: 'right',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'paper-daily-star') {
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    const blackScrim = ctx.createLinearGradient(0, H * 0.45, 0, H);
+    blackScrim.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    blackScrim.addColorStop(0.45, 'rgba(0, 0, 0, 0.72)');
+    blackScrim.addColorStop(0.75, 'rgba(0, 0, 0, 0.94)');
+    blackScrim.addColorStop(1, '#000000');
+    ctx.fillStyle = blackScrim;
+    ctx.fillRect(0, H * 0.45, W, H * 0.55);
+
+    if (kicker) {
+      ctx.fillStyle = '#e5e7eb';
+      ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, 84, 836);
+    }
+
+    ctx.fillStyle = '#d1d5db';
+    ctx.font = `500 25px 'Hind Siliguri', Georgia, serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 84, H - 110);
+
+    return {
+      x: 815,
+      y: H - 160,
+      maxWidth: 300,
+      maxHeight: 92,
+      align: 'right',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'portal-bdnews24') {
+    const topH = pBox.y;
+    const seamY = pBox.y + pBox.height;
+
+    // Top white strip
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, topH);
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      ctx.fillStyle = '#b91c1c';
+      ctx.font = `700 32px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(webUrl, 34, topH / 2 + 1);
+    }
+
+    ctx.fillStyle = '#111827';
+    ctx.font = `700 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, W - 34, topH / 2 + 1);
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Lower deep crimson square-grid background
+    const redGridGrad = ctx.createLinearGradient(0, seamY, 0, H);
+    redGridGrad.addColorStop(0, '#a81212');
+    redGridGrad.addColorStop(1, '#7a0808');
+    ctx.fillStyle = redGridGrad;
+    ctx.fillRect(0, seamY, W, H - seamY);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.09)';
+    ctx.lineWidth = 1.5;
+    for (let x = 0; x <= W; x += 52) {
+      ctx.beginPath();
+      ctx.moveTo(x, seamY);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = seamY; y <= H; y += 52) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+
+    // Centered circular white emblem overlapping seam
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 3;
+    ctx.beginPath();
+    ctx.arc(W / 2, seamY, 68, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+
+    return {
+      x: W / 2 - 60,
+      y: seamY - 50,
+      maxWidth: 120,
+      maxHeight: 100,
+      align: 'center',
+      surfaceIsDark: false,
+      pillRadius: 60,
+      padX: 8,
+      padY: 6,
+    };
+  } else if (template.styleType === 'portal-dhakapost') {
+    const tealGrad = ctx.createLinearGradient(0, 0, 0, H);
+    tealGrad.addColorStop(0, '#0b364d');
+    tealGrad.addColorStop(0.65, '#072233');
+    tealGrad.addColorStop(1, '#05121a');
+    ctx.fillStyle = tealGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Top-left orange date
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = `700 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 42, 48);
+
+    // Rounded photo cutout with crisp white border
+    ctx.save();
+    drawRoundedRect(ctx, pBox.x, pBox.y, pBox.width, pBox.height, 24);
+    ctx.clip();
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+    ctx.restore();
+
+    drawRoundedRect(ctx, pBox.x, pBox.y, pBox.width, pBox.height, 24);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Bottom horizontal white line + optional center white CTA pill
+    const lineY = H - 62;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.fillRect(0, lineY, W, 2);
+
+    if (ctaText) {
+      ctx.save();
+      ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const tw = ctx.measureText(ctaText).width;
+      const pw = Math.max(240, Math.min(520, tw + 72));
+      const ph = 50;
+      const px = (W - pw) / 2;
+      const py = lineY - ph / 2;
+      ctx.fillStyle = '#ffffff';
+      drawRoundedRect(ctx, px, py, pw, ph, 25);
+      ctx.fill();
+
+      ctx.fillStyle = '#092c3e';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, lineY + 1);
+      ctx.restore();
+    }
+
+    return {
+      x: 840,
+      y: 16,
+      maxWidth: 318,
+      maxHeight: 68,
+      align: 'right',
+      surfaceIsDark: true,
+      pillRadius: 12,
+      padX: 12,
+      padY: 6,
+    };
+  } else if (template.styleType === 'paper-kalerkantho') {
+    const seamY = pBox.y + pBox.height;
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Lower obsidian-navy background fading up into photo
+    const navyFade = ctx.createLinearGradient(0, seamY - 260, 0, seamY + 40);
+    navyFade.addColorStop(0, 'rgba(8, 19, 38, 0)');
+    navyFade.addColorStop(0.75, 'rgba(8, 19, 38, 0.94)');
+    navyFade.addColorStop(1, '#081326');
+    ctx.fillStyle = navyFade;
+    ctx.fillRect(0, seamY - 260, W, 300);
+
+    ctx.fillStyle = '#081326';
+    ctx.fillRect(0, seamY, W, H - seamY);
+
+    // Top-left frosted dark-gray date ribbon
+    const ribbonGrad = ctx.createLinearGradient(0, 60, 390, 60);
+    ribbonGrad.addColorStop(0, 'rgba(15, 23, 42, 0.72)');
+    ribbonGrad.addColorStop(0.8, 'rgba(15, 23, 42, 0.42)');
+    ribbonGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+    ctx.fillStyle = ribbonGrad;
+    ctx.fillRect(0, 60, 390, 50);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.fillRect(0, 60, 360, 1.5);
+    ctx.fillRect(0, 108.5, 360, 1.5);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 44, 85);
+
+    // Centered slanted sky-blue parallelogram banner (only if kicker is set)
+    if (kicker) {
+      ctx.save();
+      ctx.font = `700 32px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const tw = ctx.measureText(kicker).width;
+      const bw = Math.max(280, Math.min(620, tw + 110));
+      const bh = 62;
+      const skew = 26;
+      const cx = W / 2;
+      const cy = seamY - 10;
+
+      // Outer slanted accent lines
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx - bw / 2 - 28, cy + bh / 2 + 8);
+      ctx.lineTo(cx - bw / 2 + skew - 20, cy - bh / 2 - 8);
+      ctx.moveTo(cx + bw / 2 - skew + 20, cy + bh / 2 + 8);
+      ctx.lineTo(cx + bw / 2 + 28, cy - bh / 2 - 8);
+      ctx.stroke();
+
+      // Main parallelogram
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.moveTo(cx - bw / 2 + skew, cy - bh / 2);
+      ctx.lineTo(cx + bw / 2 + skew, cy - bh / 2);
+      ctx.lineTo(cx + bw / 2 - skew, cy + bh / 2);
+      ctx.lineTo(cx - bw / 2 - skew, cy + bh / 2);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, cx, cy + 2);
+      ctx.restore();
+    }
+
+    // Bottom row: CTA left + Globe URL right
+    if (ctaText) {
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = `600 25px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`•  ${ctaText}`, 56, H - 82);
+    }
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      drawWebsiteWithGlobe(ctx, webUrl, W - 56, H - 82, 'right', '#e2e8f0', 26, true);
+    }
+
+    return {
+      x: 860,
+      y: 38,
+      maxWidth: 290,
+      maxHeight: 92,
+      align: 'right',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 14,
+      padY: 8,
+    };
+  } else if (template.styleType === 'paper-jugantor') {
+    const seamY = pBox.y + pBox.height;
+
+    // Top crimson header bar
+    ctx.fillStyle = '#780000';
+    ctx.fillRect(0, 0, W, pBox.y);
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Crisp 4px white divider line
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, seamY, W, 4);
+
+    // Lower deep crimson gradient
+    const jugGrad = ctx.createLinearGradient(0, seamY + 4, 0, H);
+    jugGrad.addColorStop(0, '#910303');
+    jugGrad.addColorStop(1, '#680000');
+    ctx.fillStyle = jugGrad;
+    ctx.fillRect(0, seamY + 4, W, H - (seamY + 4));
+
+    // Centered crisp white date
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    ctx.font = `600 26px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, W / 2, seamY + 52);
+
+    // Bottom row: website URL left + CTA right
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `600 28px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(webUrl, 48, H - 56);
+    }
+
+    if (ctaText) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `600 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${ctaText} ...`, W - 48, H - 56);
+    }
+
+    return {
+      x: W / 2 - 180,
+      y: 16,
+      maxWidth: 360,
+      maxHeight: 76,
+      align: 'center',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 16,
+      padY: 8,
+    };
+  } else if (template.styleType === 'paper-ittefaq') {
+    // Top solid deep maroon header
+    const marGrad = ctx.createLinearGradient(0, 0, 0, pBox.y);
+    marGrad.addColorStop(0, '#620000');
+    marGrad.addColorStop(1, '#4c0000');
+    ctx.fillStyle = marGrad;
+    ctx.fillRect(0, 0, W, pBox.y);
+
+    if (kicker) {
+      ctx.fillStyle = '#facc15';
+      ctx.font = `700 34px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, W / 2, pBox.y - 54);
+    }
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Bottom dark vignette for logo contrast
+    const logoScrim = ctx.createLinearGradient(0, H - 220, 0, H);
+    logoScrim.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    logoScrim.addColorStop(1, 'rgba(0, 0, 0, 0.62)');
+    ctx.fillStyle = logoScrim;
+    ctx.fillRect(0, H - 220, W, 220);
+
+    return {
+      x: 44,
+      y: H - 125,
+      maxWidth: 300,
+      maxHeight: 86,
+      align: 'left',
+      surfaceIsDark: true,
+      pillRadius: 14,
+      padX: 14,
+      padY: 8,
+    };
   } else {
     // modern-inset-card
     drawRoundedRect(ctx, 28, 28, W - 56, H - 56, 28);
@@ -1787,13 +2930,15 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     }
 
     const firstLineCenterY = centerY - ((numLines - 1) * lineHeight) / 2;
+    const isLeftAligned = template.headlineAlign === 'left';
+    const leftAnchorX = (hb.centerX - hb.maxWidth / 2) + textOffsetX * W;
 
     for (let lineIdx = 0; lineIdx < numLines; lineIdx++) {
       const words = finalLines[lineIdx];
       const lineW = measureWordListWidth(ctx, words, spaceWidth);
       if (lineW > maxRenderedLineW) maxRenderedLineW = lineW;
 
-      let cursorX = centerX - lineW / 2;
+      let cursorX = isLeftAligned ? leftAnchorX : centerX - lineW / 2;
       const lineY = firstLineCenterY + lineIdx * lineHeight;
 
       for (let wIdx = 0; wIdx < words.length; wIdx++) {
@@ -1813,7 +2958,7 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     const padX = Math.max(24, renderFontSize * 0.35);
     const padY = Math.max(18, renderFontSize * 0.25);
     textHitBox = {
-      x: centerX - maxRenderedLineW / 2 - padX,
+      x: isLeftAligned ? leftAnchorX - padX : centerX - maxRenderedLineW / 2 - padX,
       y: centerY - blockHeight / 2 - padY,
       width: Math.max(120, maxRenderedLineW + padX * 2),
       height: Math.max(60, blockHeight + padY * 2),

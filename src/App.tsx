@@ -15,13 +15,16 @@ import {
   MousePointerClick,
   Pencil,
   Plus,
+  Redo2,
   RotateCcw,
   Settings,
   Sparkles,
   Sun,
   Tag,
   Trash2,
+  Undo2,
   Upload,
+  X,
 } from 'lucide-react';
 import { RangeSlider } from './components/RangeSlider';
 import { TemplatesPage } from './components/TemplatesPage';
@@ -234,12 +237,75 @@ function normalizeExternalUrl(input: string): string {
   return /^https?:\/\//i.test(s) ? s : `https://${s}`;
 }
 
+function sanitizeUrlInput(raw: string): string {
+  const trimmed = raw.trim().replace(/[\r\n]+/g, ' ');
+  if (!trimmed) return '';
+  const urlMatches = trimmed.match(/https?:\/\/[^\s]+/gi);
+  if (urlMatches && urlMatches.length > 0) {
+    const first = urlMatches[0];
+    const secondProtoIdx = first.slice(8).search(/https?:\/\//i);
+    if (secondProtoIdx !== -1) {
+      return first.slice(0, secondProtoIdx + 8);
+    }
+    return first;
+  }
+  return trimmed;
+}
+
 function isLikelyUrl(input: string): boolean {
   const s = input.trim();
   if (s.length < 8) return false;
   if (/^https?:\/\/[^\s]+\.[^\s]+/i.test(s)) return true;
   if (/^[a-z0-9-]+(\.[a-z0-9-]+)+\/[^\s]*/i.test(s)) return true;
   return false;
+}
+
+function isClientErrorOrChallengeTitle(raw: string): boolean {
+  const t = raw.trim();
+  if (!t) return true;
+  return (
+    /^(just a moment|attention required|access denied|403 forbidden|cloudflare|security check|page not found|404\b|error\s*404|nothing found|not found)/i.test(
+      t
+    ) || /\b404\s*[-–|:]\s*(nothing found|not found|page not found)/i.test(t)
+  );
+}
+
+function extractTitleFromSlugClient(rawUrl: string): string {
+  try {
+    const parsed = new URL(normalizeExternalUrl(rawUrl));
+    const segments = parsed.pathname
+      .split('/')
+      .map((s) => decodeURIComponent(s).trim())
+      .filter(Boolean);
+    const meaningful = segments
+      .filter((seg) => {
+        const clean = seg.replace(/\.(html?|php|aspx?|jsp)$/i, '').trim();
+        if (/^[0-9a-f]{10,}$/i.test(clean)) return false;
+        if (/^[0-9a-f]{8}-[0-9a-f-]{12,}$/i.test(clean)) return false;
+        return clean.length > 6;
+      })
+      .map((seg) =>
+        seg
+          .replace(/\.(html?|php|aspx?|jsp)$/i, '')
+          .replace(/[-_]+/g, ' ')
+          .replace(/\b\d{5,}\b/g, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
+      .filter(
+        (seg) =>
+          seg.length > 8 &&
+          (seg.includes(' ') || /[\u0980-\u09FF]/.test(seg)) &&
+          !/^(news|article|story|details|national|politics|sports|bangladesh|world|opinion|national news|economics business)$/i.test(
+            seg
+          )
+      );
+    if (meaningful.length === 0) return '';
+    meaningful.sort((a, b) => b.length - a.length);
+    return meaningful[0];
+  } catch {
+    return '';
+  }
 }
 
 function extractYouTubeThumbClient(rawUrl: string): string {
@@ -298,13 +364,16 @@ async function fetchMicrolinkClient(
         }
       }
     }
+    if (isClientErrorOrChallengeTitle(title)) {
+      return { title: '', image: '' };
+    }
     const rawImg =
       typeof json.data.image === 'string'
         ? json.data.image
         : json.data.image?.url || '';
     return {
       title,
-      image: rawImg.trim(),
+      image: rawImg.trim().replace(/ /g, '%20'),
     };
   } catch {
     return { title: '', image: '' };
@@ -339,8 +408,8 @@ function parseClientHtmlMeta(html: string, pageUrl: string): { title: string; im
       doc.title?.trim() ||
       '';
 
-    if (/^(just a moment|attention required|access denied|403 forbidden|cloudflare|page not found|404)/i.test(rawTitle)) {
-      rawTitle = '';
+    if (isClientErrorOrChallengeTitle(rawTitle)) {
+      return { title: '', image: '' };
     }
 
     if (rawTitle) {
@@ -373,7 +442,7 @@ function parseClientHtmlMeta(html: string, pageUrl: string): { title: string; im
     let image = '';
     if (rawImg) {
       try {
-        image = new URL(rawImg, pageUrl).href;
+        image = new URL(rawImg.replace(/ /g, '%20'), pageUrl).href;
       } catch {
         image = '';
       }
@@ -417,7 +486,54 @@ async function fetchJsonLinkClient(
     if (!resp.ok) return { title: '', image: '' };
     const json = (await resp.json()) as { title?: string; images?: string[] };
     const title = (json.title || '').trim();
-    const image = Array.isArray(json.images) && json.images[0] ? json.images[0].trim() : '';
+    if (isClientErrorOrChallengeTitle(title)) {
+      return { title: '', image: '' };
+    }
+    const image =
+      Array.isArray(json.images) && json.images[0]
+        ? json.images[0].trim().replace(/ /g, '%20')
+        : '';
+    return { title, image };
+  } catch {
+    return { title: '', image: '' };
+  }
+}
+
+async function fetchJinaClient(
+  rawUrl: string,
+  signal: AbortSignal
+): Promise<{ title: string; image: string }> {
+  try {
+    const target = normalizeExternalUrl(rawUrl);
+    if (!target) return { title: '', image: '' };
+    const resp = await fetch(`https://r.jina.ai/${target}`, {
+      signal,
+      headers: { Accept: 'text/plain' },
+    });
+    if (!resp.ok) return { title: '', image: '' };
+    const text = (await resp.text()).slice(0, 100_000);
+    const titleMatch = text.match(/^Title:\s*(.+)$/m);
+    let title = titleMatch ? titleMatch[1].trim() : '';
+    if (title) {
+      for (const sep of [' | ', ' - ', ' – ', ' — ', ' :: ']) {
+        const idx = title.lastIndexOf(sep);
+        if (idx > 14 && title.slice(idx + sep.length).trim().split(/\s+/).length <= 4) {
+          title = title.slice(0, idx).trim();
+          break;
+        }
+      }
+    }
+    if (isClientErrorOrChallengeTitle(title)) title = '';
+    let image = '';
+    const imgRegex = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = imgRegex.exec(text)) !== null) {
+      const candidate = m[1].trim().replace(/ /g, '%20');
+      if (candidate && !/logo|favicon|icon|avatar|sprite|\.svg/i.test(candidate)) {
+        image = candidate;
+        break;
+      }
+    }
     return { title, image };
   } catch {
     return { title: '', image: '' };
@@ -718,6 +834,8 @@ export default function App() {
 
     const effectiveFooterCta =
       ov?.footerCtaText !== undefined ? ov.footerCtaText : selectedTemplate.footerCtaText;
+    const effectiveWebsiteUrl =
+      ov?.websiteUrl !== undefined ? ov.websiteUrl : selectedTemplate.websiteUrl;
 
     return {
       ...selectedTemplate,
@@ -725,6 +843,7 @@ export default function App() {
       category: effectiveCategory,
       kickerText: effectiveKicker,
       footerCtaText: effectiveFooterCta,
+      websiteUrl: effectiveWebsiteUrl,
     };
   }, [selectedTemplate, templateOverrides, categoryNames]);
 
@@ -1066,104 +1185,347 @@ export default function App() {
     [handleSelectTemplate, navigateToPage]
   );
 
-  // Automatic News Extraction from URL (server endpoint + client-side Microlink fallback)
-  const extractNewsFromUrl = useCallback(async (rawUrl: string, force = false) => {
-    const trimmed = rawUrl.trim();
-    if (!isLikelyUrl(trimmed)) return;
-    if (!force && trimmed === lastFetchedUrlRef.current) return;
+  // Undo / Redo History Engine (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z)
+  type UndoableState = {
+    newsUrl: string;
+    selectedTemplate: TemplateConfig;
+    headline: string;
+    highlights: HighlightRange[];
+    lineMode: LineMode;
+    fontSizePercent: number;
+    lineGapPercent: number;
+    selectedFontId: string;
+    textOffsetX: number;
+    textOffsetY: number;
+    textShadow: boolean;
+    textColor: string;
+    highlightColor: string;
+    photoSrc: string;
+    photoZoom: number;
+    photoPanX: number;
+    photoPanY: number;
+    logoSettings: LogoSettings;
+    templateOverrides: Record<string, TemplateOverride>;
+  };
 
-    lastFetchedUrlRef.current = trimmed;
+  const currentUndoable = useMemo<UndoableState>(
+    () => ({
+      newsUrl,
+      selectedTemplate,
+      headline,
+      highlights,
+      lineMode,
+      fontSizePercent,
+      lineGapPercent,
+      selectedFontId,
+      textOffsetX,
+      textOffsetY,
+      textShadow,
+      textColor,
+      highlightColor,
+      photoSrc,
+      photoZoom,
+      photoPanX,
+      photoPanY,
+      logoSettings,
+      templateOverrides,
+    }),
+    [
+      newsUrl,
+      selectedTemplate,
+      headline,
+      highlights,
+      lineMode,
+      fontSizePercent,
+      lineGapPercent,
+      selectedFontId,
+      textOffsetX,
+      textOffsetY,
+      textShadow,
+      textColor,
+      highlightColor,
+      photoSrc,
+      photoZoom,
+      photoPanX,
+      photoPanY,
+      logoSettings,
+      templateOverrides,
+    ]
+  );
 
-    if (extractAbortRef.current) {
-      extractAbortRef.current.abort();
-    }
-    const controller = new AbortController();
-    extractAbortRef.current = controller;
+  const currentUndoableRef = useRef<UndoableState>(currentUndoable);
+  currentUndoableRef.current = currentUndoable;
 
-    setIsExtracting(true);
+  const undoStackRef = useRef<UndoableState[]>([]);
+  const redoStackRef = useRef<UndoableState[]>([]);
+  const committedUndoableRef = useRef<UndoableState>(currentUndoable);
+  const isApplyingHistoryRef = useRef(false);
+  const historyDebounceRef = useRef<number | null>(null);
+  const [historyTick, setHistoryTick] = useState(0);
+  const [dragEndTick, setDragEndTick] = useState(0);
+
+  const snapshotsEqual = (a: UndoableState, b: UndoableState): boolean =>
+    a.newsUrl === b.newsUrl &&
+    a.selectedTemplate.id === b.selectedTemplate.id &&
+    a.selectedTemplate.overlayUrl === b.selectedTemplate.overlayUrl &&
+    a.headline === b.headline &&
+    a.lineMode === b.lineMode &&
+    a.fontSizePercent === b.fontSizePercent &&
+    a.lineGapPercent === b.lineGapPercent &&
+    a.selectedFontId === b.selectedFontId &&
+    a.textOffsetX === b.textOffsetX &&
+    a.textOffsetY === b.textOffsetY &&
+    a.textShadow === b.textShadow &&
+    a.textColor === b.textColor &&
+    a.highlightColor === b.highlightColor &&
+    a.photoSrc === b.photoSrc &&
+    a.photoZoom === b.photoZoom &&
+    a.photoPanX === b.photoPanX &&
+    a.photoPanY === b.photoPanY &&
+    a.logoSettings.dataUrl === b.logoSettings.dataUrl &&
+    a.logoSettings.scale === b.logoSettings.scale &&
+    a.logoSettings.x === b.logoSettings.x &&
+    a.logoSettings.y === b.logoSettings.y &&
+    a.logoSettings.hideDefaultBrand === b.logoSettings.hideDefaultBrand &&
+    a.logoSettings.badgeStyle === b.logoSettings.badgeStyle &&
+    JSON.stringify(a.highlights) === JSON.stringify(b.highlights) &&
+    JSON.stringify(a.templateOverrides) === JSON.stringify(b.templateOverrides);
+
+  const applyUndoableSnapshot = useCallback((snap: UndoableState) => {
+    isApplyingHistoryRef.current = true;
+    committedUndoableRef.current = snap;
+    lastFetchedUrlRef.current = snap.newsUrl.trim();
     setExtractError(null);
-    try {
-      let title = '';
-      let image = '';
-      let proxiedImage = '';
-      let apiReachable = false;
+    setNewsUrl(snap.newsUrl);
+    setSelectedTemplate(snap.selectedTemplate);
+    setHeadline(snap.headline);
+    setHighlights(snap.highlights);
+    setLineMode(snap.lineMode);
+    setFontSizePercent(snap.fontSizePercent);
+    setLineGapPercent(snap.lineGapPercent);
+    setSelectedFontId(snap.selectedFontId);
+    setTextOffsetX(snap.textOffsetX);
+    setTextOffsetY(snap.textOffsetY);
+    setTextShadow(snap.textShadow);
+    setTextColor(snap.textColor);
+    setHighlightColor(snap.highlightColor);
+    setPhotoSrc(snap.photoSrc);
+    setPhotoZoom(snap.photoZoom);
+    setPhotoPanX(snap.photoPanX);
+    setPhotoPanY(snap.photoPanY);
+    setLogoSettings(snap.logoSettings);
+    setTemplateOverrides(snap.templateOverrides);
+    window.setTimeout(() => {
+      isApplyingHistoryRef.current = false;
+    }, 0);
+  }, []);
 
-      try {
-        const resp = await fetch(`/api/extract?url=${encodeURIComponent(trimmed)}`, {
-          signal: controller.signal,
-        });
-        const contentType = (resp.headers.get('content-type') || '').toLowerCase();
-        if (resp.ok && contentType.includes('application/json')) {
-          apiReachable = true;
-          const data = (await resp.json()) as {
-            title?: string;
-            image?: string;
-            proxiedImage?: string;
-          };
-          title = (data.title || '').trim();
-          image = (data.image || '').trim();
-          proxiedImage = (data.proxiedImage || '').trim();
-        }
-      } catch {
-        // Fallback to client-side extractor below
-      }
-
-      if (controller.signal.aborted) return;
-
-      if (!title || !image) {
-        const [ml, ao, jl] = await Promise.all([
-          fetchMicrolinkClient(trimmed, controller.signal),
-          fetchAllOriginsClient(trimmed, controller.signal),
-          fetchJsonLinkClient(trimmed, controller.signal),
-        ]);
-        if (!title) title = ml.title || ao.title || jl.title;
-        if (!image) image = ml.image || ao.image || jl.image;
-      }
-
-      if (!image) {
-        image = extractYouTubeThumbClient(trimmed);
-      }
-
-      if (controller.signal.aborted) return;
-
-      if (title) {
-        setHeadline(title);
-        setHighlights([]);
-        setTextOffsetX(0);
-        setTextOffsetY(0);
-      }
-
-      let nextImg = proxiedImage;
-      if (!nextImg && image) {
-        nextImg = apiReachable
-          ? `/api/proxy-image?url=${encodeURIComponent(image)}`
-          : `https://wsrv.nl/?url=${encodeURIComponent(image)}&output=jpg`;
-      }
-
-      if (nextImg) {
-        setPhotoZoom(1);
-        setPhotoPanX(0);
-        setPhotoPanY(0);
-        setPhotoSrc(nextImg);
-      }
-
-      if (!title && !nextImg) {
-        setExtractError('এই লিংক থেকে শিরোনাম বা ছবি পাওয়া যায়নি। ম্যানুয়ালি শিরোনাম ও ছবি দিয়ে কার্ড বানাতে পারবেন।');
-      }
-    } catch {
-      if (!controller.signal.aborted) {
-        setExtractError('লিংক থেকে তথ্য আনতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
-      }
-    } finally {
-      if (extractAbortRef.current === controller) {
-        setIsExtracting(false);
-      }
+  const commitHistoryNow = useCallback(() => {
+    if (historyDebounceRef.current !== null) {
+      window.clearTimeout(historyDebounceRef.current);
+      historyDebounceRef.current = null;
+    }
+    const curr = currentUndoableRef.current;
+    const committed = committedUndoableRef.current;
+    if (!snapshotsEqual(committed, curr)) {
+      undoStackRef.current = [...undoStackRef.current.slice(-49), committed];
+      redoStackRef.current = [];
+      committedUndoableRef.current = curr;
+      setHistoryTick((t) => t + 1);
     }
   }, []);
 
+  useEffect(() => {
+    if (isApplyingHistoryRef.current || dragRef.current.mode !== 'none') return;
+    if (snapshotsEqual(committedUndoableRef.current, currentUndoable)) return;
+    if (historyDebounceRef.current !== null) {
+      window.clearTimeout(historyDebounceRef.current);
+    }
+    historyDebounceRef.current = window.setTimeout(() => {
+      historyDebounceRef.current = null;
+      commitHistoryNow();
+    }, 320);
+    return () => {
+      if (historyDebounceRef.current !== null) {
+        window.clearTimeout(historyDebounceRef.current);
+        historyDebounceRef.current = null;
+      }
+    };
+  }, [currentUndoable, dragEndTick, commitHistoryNow]);
+
+  const performUndo = useCallback(() => {
+    if (historyDebounceRef.current !== null) {
+      window.clearTimeout(historyDebounceRef.current);
+      historyDebounceRef.current = null;
+    }
+    const curr = currentUndoableRef.current;
+    const committed = committedUndoableRef.current;
+    if (!snapshotsEqual(committed, curr)) {
+      redoStackRef.current = [...redoStackRef.current.slice(-49), curr];
+      applyUndoableSnapshot(committed);
+      setHistoryTick((t) => t + 1);
+      return;
+    }
+    if (undoStackRef.current.length === 0) return;
+    const prevSnap = undoStackRef.current[undoStackRef.current.length - 1];
+    undoStackRef.current = undoStackRef.current.slice(0, -1);
+    redoStackRef.current = [...redoStackRef.current.slice(-49), curr];
+    applyUndoableSnapshot(prevSnap);
+    setHistoryTick((t) => t + 1);
+  }, [applyUndoableSnapshot]);
+
+  const performRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    if (historyDebounceRef.current !== null) {
+      window.clearTimeout(historyDebounceRef.current);
+      historyDebounceRef.current = null;
+    }
+    const curr = currentUndoableRef.current;
+    const nextSnap = redoStackRef.current[redoStackRef.current.length - 1];
+    redoStackRef.current = redoStackRef.current.slice(0, -1);
+    undoStackRef.current = [...undoStackRef.current.slice(-49), curr];
+    applyUndoableSnapshot(nextSnap);
+    setHistoryTick((t) => t + 1);
+  }, [applyUndoableSnapshot]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        if (undoStackRef.current.length > 0 || !snapshotsEqual(committedUndoableRef.current, currentUndoableRef.current)) {
+          e.preventDefault();
+          performUndo();
+        }
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        if (redoStackRef.current.length > 0) {
+          e.preventDefault();
+          performRedo();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [performUndo, performRedo]);
+
+  const canUndo =
+    historyTick >= 0 &&
+    (undoStackRef.current.length > 0 || !snapshotsEqual(committedUndoableRef.current, currentUndoable));
+  const canRedo = historyTick >= 0 && redoStackRef.current.length > 0;
+
+  // Automatic News Extraction from URL (server endpoint + multi-source client fallbacks)
+  const extractNewsFromUrl = useCallback(
+    async (rawUrl: string, force = false) => {
+      const trimmed = sanitizeUrlInput(rawUrl);
+      if (!isLikelyUrl(trimmed)) return;
+      if (!force && trimmed === lastFetchedUrlRef.current) return;
+
+      lastFetchedUrlRef.current = trimmed;
+
+      if (extractAbortRef.current) {
+        extractAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      extractAbortRef.current = controller;
+
+      setIsExtracting(true);
+      setExtractError(null);
+      try {
+        let title = '';
+        let image = '';
+        let proxiedImage = '';
+        let apiReachable = false;
+
+        try {
+          const resp = await fetch(`/api/extract?url=${encodeURIComponent(trimmed)}`, {
+            signal: controller.signal,
+          });
+          const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+          if (resp.ok && contentType.includes('application/json')) {
+            apiReachable = true;
+            const data = (await resp.json()) as {
+              title?: string;
+              image?: string;
+              proxiedImage?: string;
+            };
+            title = (data.title || '').trim();
+            image = (data.image || '').trim();
+            proxiedImage = (data.proxiedImage || '').trim();
+          }
+        } catch {
+          // Fallback to client-side extractors below
+        }
+
+        if (controller.signal.aborted) return;
+
+        if (!title || !image) {
+          const [ml, ao, jl, jina] = await Promise.all([
+            fetchMicrolinkClient(trimmed, controller.signal),
+            fetchAllOriginsClient(trimmed, controller.signal),
+            fetchJsonLinkClient(trimmed, controller.signal),
+            fetchJinaClient(trimmed, controller.signal),
+          ]);
+          if (!title) title = ml.title || ao.title || jl.title || jina.title;
+          if (!image) image = ml.image || ao.image || jl.image || jina.image;
+        }
+
+        if (!image) {
+          image = extractYouTubeThumbClient(trimmed);
+        }
+        if (!title && image) {
+          title = extractTitleFromSlugClient(trimmed);
+        }
+
+        if (controller.signal.aborted) return;
+
+        if (title || image) {
+          commitHistoryNow();
+        }
+
+        if (title) {
+          setHeadline(title);
+          setHighlights([]);
+          setTextOffsetX(0);
+          setTextOffsetY(0);
+        }
+
+        let nextImg = proxiedImage;
+        if (!nextImg && image) {
+          nextImg = apiReachable
+            ? `/api/proxy-image?url=${encodeURIComponent(image)}`
+            : `https://wsrv.nl/?url=${encodeURIComponent(image)}&output=jpg`;
+        }
+
+        if (nextImg) {
+          setPhotoZoom(1);
+          setPhotoPanX(0);
+          setPhotoPanY(0);
+          setPhotoSrc(nextImg);
+        }
+
+        if (!title && !nextImg) {
+          setExtractError(
+            'এই লিংক থেকে শিরোনাম বা ছবি পাওয়া যায়নি (সাইট ব্লক বা লিংক অনুপলব্ধ হতে পারে)। ম্যানুয়ালি শিরোনাম ও ছবি দিয়ে কার্ড বানাতে পারবেন।'
+          );
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setExtractError('লিংক থেকে তথ্য আনতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
+        }
+      } finally {
+        if (extractAbortRef.current === controller) {
+          setIsExtracting(false);
+        }
+      }
+    },
+    [commitHistoryNow]
+  );
+
   // Debounced auto-fetch when typing/editing URL
   useEffect(() => {
-    const trimmed = newsUrl.trim();
+    const trimmed = sanitizeUrlInput(newsUrl);
     if (!trimmed) {
       setExtractError(null);
       return;
@@ -1175,15 +1537,56 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [newsUrl, extractNewsFromUrl]);
 
-  // Immediate fetch on paste
+  // Immediate fetch on paste (preventDefault prevents double-paste!)
   const handleUrlPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pasted = e.clipboardData.getData('text');
-    if (pasted && isLikelyUrl(pasted)) {
-      const cleaned = pasted.trim();
+    const cleaned = sanitizeUrlInput(pasted);
+    if (cleaned && isLikelyUrl(cleaned)) {
+      e.preventDefault();
+      commitHistoryNow();
+      lastFetchedUrlRef.current = '';
+      setExtractError(null);
       setNewsUrl(cleaned);
       extractNewsFromUrl(cleaned, true);
     }
   };
+
+  // Clear link (×) and return immediately to initial homepage default state
+  const handleClearNewsUrl = useCallback(() => {
+    commitHistoryNow();
+    if (extractAbortRef.current) {
+      extractAbortRef.current.abort();
+      extractAbortRef.current = null;
+    }
+    lastFetchedUrlRef.current = '';
+    setIsExtracting(false);
+    setExtractError(null);
+    setNewsUrl('');
+
+    const isMaroon = selectedTemplate.id === PSD_MAROON_TEMPLATE.id;
+    setHeadline(
+      isMaroon
+        ? 'নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস'
+        : 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ'
+    );
+    setHighlights(
+      isMaroon
+        ? [{ id: 'sample-hl-2', start: 29, end: 40, text: 'একটি ইতিহাস' }]
+        : [{ id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' }]
+    );
+    setPhotoSrc(isMaroon ? '/sample/yunus_nahid.jpg' : '/sample/parliament.jpg');
+    setPhotoZoom(1);
+    setPhotoPanX(0);
+    setPhotoPanY(0);
+    setTextOffsetX(0);
+    setTextOffsetY(0);
+    setLineMode('auto');
+    setFontSizePercent(100);
+    setLineGapPercent(92);
+    setTextShadow(false);
+    setTextColor(selectedTemplate.defaultTextColor);
+    setHighlightColor(selectedTemplate.defaultHighlightColor);
+  }, [commitHistoryNow, selectedTemplate]);
 
   // Auto-save card state to localStorage (debounced + synchronous flush on pagehide/beforeunload)
   const latestCardSnapshot = useMemo<SavedCardState>(
@@ -1673,11 +2076,15 @@ export default function App() {
 
   const endCanvasDrag = () => {
     const st = dragRef.current;
+    const hadMovement = st.moved;
     if (st.mode === 'photo' && !st.moved && !photoImg) {
       photoInputRef.current?.click();
     }
     dragRef.current.mode = 'none';
     setSnapState({ snappedX: false, snappedY: false, isDragging: false });
+    if (hadMovement) {
+      setDragEndTick((t) => t + 1);
+    }
   };
 
   // Download Card
@@ -1892,13 +2299,15 @@ export default function App() {
             activeFont={activeFont}
             newsUrl={newsUrl}
             onNewsUrlChange={(val) => {
-              if (val.trim() !== lastFetchedUrlRef.current) {
+              const sanitized = /https?:\/\/.*https?:\/\//i.test(val) ? sanitizeUrlInput(val) : val;
+              if (sanitized.trim() !== lastFetchedUrlRef.current) {
                 lastFetchedUrlRef.current = '';
                 setExtractError(null);
               }
-              setNewsUrl(val);
+              setNewsUrl(sanitized);
             }}
             onNewsUrlPaste={handleUrlPaste}
+            onClearNewsUrl={handleClearNewsUrl}
             isExtracting={isExtracting}
           />
         ) : (
@@ -1912,7 +2321,8 @@ export default function App() {
                     value={newsUrl}
                     onPaste={handleUrlPaste}
                     onChange={(e) => {
-                      const nextVal = e.target.value;
+                      const raw = e.target.value;
+                      const nextVal = /https?:\/\/.*https?:\/\//i.test(raw) ? sanitizeUrlInput(raw) : raw;
                       if (nextVal.trim() !== lastFetchedUrlRef.current) {
                         lastFetchedUrlRef.current = '';
                         setExtractError(null);
@@ -1921,15 +2331,30 @@ export default function App() {
                     }}
                     placeholder="এখানে নিউজের লিংক পেস্ট করুন..."
                     aria-label="নিউজের লিংক"
-                    className="w-full rounded-xl border border-[#dcd6cb] bg-white px-4 py-3 pr-11 text-[15px] text-slate-800 placeholder:text-[#78716c] focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400"
+                    className={`w-full rounded-xl border border-[#dcd6cb] bg-white px-4 py-3 text-[15px] text-slate-800 placeholder:text-[#78716c] focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400 ${
+                      newsUrl ? (isExtracting ? 'pr-20' : 'pr-12') : 'pr-11'
+                    }`}
                   />
                   {isExtracting && (
                     <div
-                      className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1c3060] dark:text-sky-400"
+                      className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-[#1c3060] dark:text-sky-400 ${
+                        newsUrl ? 'right-11' : 'right-3.5'
+                      }`}
                       title="নিউজ আনা হচ্ছে..."
                     >
                       <Loader2 className="h-5 w-5 animate-spin" />
                     </div>
+                  )}
+                  {newsUrl.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearNewsUrl}
+                      title="লিংক মুছে প্রথম অবস্থায় ফিরুন"
+                      aria-label="লিংক মুছুন"
+                      className="absolute right-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   )}
                 </div>
                 {isLikelyUrl(newsUrl) && (
@@ -1937,7 +2362,7 @@ export default function App() {
                     type="button"
                     disabled={isExtracting}
                     onClick={() => extractNewsFromUrl(newsUrl, true)}
-                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#1c3060] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#15254b] disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
+                    className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#1c3060] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#15254b] disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
                   >
                     <RotateCcw className={`h-4 w-4 ${isExtracting ? 'animate-spin' : ''}`} />
                     <span>{isExtracting ? 'আনা হচ্ছে...' : 'তথ্য আনুন'}</span>
@@ -2113,13 +2538,38 @@ export default function App() {
           {/* RIGHT COLUMN: Headline Card (with Interactive Word-by-Word Click Highlight) */}
           <div className="w-full space-y-3">
             <section className="rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
-              <div className="mb-2.5 flex items-center justify-between gap-2">
-                <label
-                  htmlFor="headline-textarea"
-                  className="block text-[13.5px] font-semibold text-[#57534e] dark:text-slate-300"
-                >
-                  শিরোনাম
-                </label>
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="headline-textarea"
+                    className="block text-[13.5px] font-semibold text-[#57534e] dark:text-slate-300"
+                  >
+                    শিরোনাম
+                  </label>
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={performUndo}
+                      disabled={!canUndo}
+                      title="পূর্বাবস্থায় ফিরুন (Ctrl+Z)"
+                      aria-label="আনডু (Ctrl+Z)"
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[#d6cfc2] bg-[#faf6ef] px-2 py-0.5 text-[11px] font-semibold text-[#1c3060] transition-colors hover:bg-[#efe6d8] disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      <Undo2 className="h-3 w-3" />
+                      <span>আনডু</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={performRedo}
+                      disabled={!canRedo}
+                      title="আবার করুন (Ctrl+Y)"
+                      aria-label="রিডু (Ctrl+Y)"
+                      className="inline-flex cursor-pointer items-center rounded-md border border-[#d6cfc2] bg-[#faf6ef] p-1 text-[11px] font-semibold text-[#1c3060] transition-colors hover:bg-[#efe6d8] disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      <Redo2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
 
                 {/* Sub-Tabs for Highlight Experience */}
                 <div className="inline-flex rounded-lg border border-[#e2dcd1] bg-[#f4eee4] p-0.5 text-xs font-semibold dark:border-slate-700 dark:bg-slate-800">
@@ -2288,12 +2738,15 @@ export default function App() {
                     </div>
                     <p className="mt-0.5 truncate text-xs text-[#6b655e] dark:text-slate-400">
                       ব্যাজ: {effectiveTemplate.kickerText?.trim() || 'নেই'}
-                      {selectedTemplate.styleType !== 'psd-overlay'
+                      {!['psd-overlay', 'tv-jamuna', 'paper-prothom-alo-2', 'portal-jagonews', 'paper-daily-star', 'portal-bdnews24', 'paper-ittefaq'].includes(selectedTemplate.styleType)
                         ? ` · ফুটার: ${
                             (effectiveTemplate.footerCtaText !== undefined
                               ? effectiveTemplate.footerCtaText.trim()
                               : 'বিস্তারিত কমেন্টে') || 'নেই'
                           }`
+                        : ''}
+                      {effectiveTemplate.hasWebsiteUrl
+                        ? ` · ইউআরএল: ${effectiveTemplate.websiteUrl?.trim() || 'নেই'}`
                         : ''}
                     </p>
                   </div>
@@ -2333,7 +2786,7 @@ export default function App() {
                     />
                   </div>
 
-                  {selectedTemplate.styleType !== 'psd-overlay' && (
+                  {!['psd-overlay', 'tv-jamuna', 'paper-prothom-alo-2', 'portal-jagonews', 'paper-daily-star', 'portal-bdnews24', 'paper-ittefaq'].includes(selectedTemplate.styleType) && (
                     <div>
                       <div className="mb-1 flex items-center justify-between gap-2">
                         <label className="block text-xs font-semibold text-[#57534e] dark:text-slate-300">
@@ -2364,6 +2817,37 @@ export default function App() {
                           handleUpdateActiveTemplateOverride({ footerCtaText: e.target.value })
                         }
                         placeholder="খালি রাখলে ফুটার লেখা দেখাবে না"
+                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+                  )}
+
+                  {effectiveTemplate.hasWebsiteUrl && (
+                    <div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label className="block text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                          ওয়েবসাইট ইউআরএল
+                        </label>
+                        {Boolean(effectiveTemplate.websiteUrl?.trim()) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleUpdateActiveTemplateOverride({ websiteUrl: '' })
+                            }
+                            className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline dark:text-red-400"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span>মুছুন</span>
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={effectiveTemplate.websiteUrl ?? ''}
+                        onChange={(e) =>
+                          handleUpdateActiveTemplateOverride({ websiteUrl: e.target.value })
+                        }
+                        placeholder="যেমন: www.yoursite.com (খালি রাখলে দেখাবে না)"
                         className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                       />
                     </div>

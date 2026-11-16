@@ -73,6 +73,7 @@ interface TemplatePreviewCanvasProps {
   activeFont: FontOption;
   size?: number;
   eager?: boolean;
+  preserveAspect?: boolean;
 }
 
 const DEFAULT_THUMB_HEADLINE = 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ';
@@ -91,6 +92,7 @@ const TemplatePreviewCanvas: React.FC<TemplatePreviewCanvasProps> = ({
   activeFont,
   size = 420,
   eager = false,
+  preserveAspect = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -197,10 +199,17 @@ const TemplatePreviewCanvas: React.FC<TemplatePreviewCanvasProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative aspect-square w-full overflow-hidden bg-[#f4eee4] dark:bg-slate-900"
+      className={`relative w-full overflow-hidden bg-[#f4eee4] dark:bg-slate-900 ${
+        preserveAspect ? '' : 'aspect-square'
+      }`}
+      style={
+        preserveAspect
+          ? { aspectRatio: `${template.canvasWidth} / ${template.canvasHeight}` }
+          : undefined
+      }
     >
       {inView ? (
-        <canvas ref={canvasRef} className="block h-full w-full object-cover" />
+        <canvas ref={canvasRef} className="block h-full w-full object-contain" />
       ) : (
         <div
           className="h-full w-full"
@@ -236,6 +245,7 @@ interface TemplatesPageProps {
   newsUrl: string;
   onNewsUrlChange: (url: string) => void;
   onNewsUrlPaste: (e: React.ClipboardEvent<HTMLInputElement>) => void;
+  onClearNewsUrl: () => void;
   isExtracting: boolean;
 }
 
@@ -260,6 +270,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
   newsUrl,
   onNewsUrlChange,
   onNewsUrlPaste,
+  onClearNewsUrl,
   isExtracting,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -295,6 +306,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
         kickerText: effectiveKicker,
         footerCtaText:
           ov?.footerCtaText !== undefined ? ov.footerCtaText : tpl.footerCtaText,
+        websiteUrl: ov?.websiteUrl !== undefined ? ov.websiteUrl : tpl.websiteUrl,
       };
     });
   }, [templateOverrides, categoryNames]);
@@ -383,15 +395,30 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
             onPaste={onNewsUrlPaste}
             onChange={(e) => onNewsUrlChange(e.target.value)}
             placeholder="এখানে নিউজের লিংক পেস্ট করুন..."
-            className="w-full rounded-xl border border-[#dcd6cb] bg-white px-4 py-3 pr-11 text-[15px] text-slate-800 placeholder:text-[#78716c] focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400"
+            className={`w-full rounded-xl border border-[#dcd6cb] bg-white px-4 py-3 text-[15px] text-slate-800 placeholder:text-[#78716c] focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400 ${
+              newsUrl ? (isExtracting ? 'pr-20' : 'pr-12') : 'pr-11'
+            }`}
           />
           {isExtracting && (
             <div
-              className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1c3060] dark:text-sky-400"
+              className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-[#1c3060] dark:text-sky-400 ${
+                newsUrl ? 'right-11' : 'right-3.5'
+              }`}
               title="নিউজ আনা হচ্ছে..."
             >
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
+          )}
+          {newsUrl.length > 0 && (
+            <button
+              type="button"
+              onClick={onClearNewsUrl}
+              title="লিংক মুছে প্রথম অবস্থায় ফিরুন"
+              aria-label="লিংক মুছুন"
+              className="absolute right-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
           )}
         </div>
       </section>
@@ -663,6 +690,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
                     activeFont={activeFont}
                     size={700}
                     eager
+                    preserveAspect
                   />
                 </div>
               </div>
@@ -771,7 +799,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
                         />
                       </div>
 
-                      {inspectedTemplate.styleType !== 'psd-overlay' && (
+                      {!['psd-overlay', 'tv-jamuna', 'paper-prothom-alo-2', 'portal-jagonews', 'paper-daily-star', 'portal-bdnews24', 'paper-ittefaq'].includes(inspectedTemplate.styleType) && (
                         <div>
                           <label className="mb-1 block text-[11.5px] font-semibold text-[#57534e] dark:text-slate-300">
                             নিচের ফুটার লেখা (CTA)
@@ -785,6 +813,25 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
                               })
                             }
                             placeholder="খালি রাখলে ফুটার লেখা দেখাবে না"
+                            className="w-full rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+                      )}
+
+                      {inspectedTemplate.hasWebsiteUrl && (
+                        <div className="sm:col-span-2">
+                          <label className="mb-1 block text-[11.5px] font-semibold text-[#57534e] dark:text-slate-300">
+                            ওয়েবসাইট ইউআরএল
+                          </label>
+                          <input
+                            type="text"
+                            value={inspectedTemplate.websiteUrl ?? ''}
+                            onChange={(e) =>
+                              onUpdateTemplateOverride(inspectedTemplate.id, {
+                                websiteUrl: e.target.value,
+                              })
+                            }
+                            placeholder="যেমন: www.yoursite.com (খালি রাখলে দেখাবে না)"
                             className="w-full rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                           />
                         </div>

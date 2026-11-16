@@ -139,7 +139,7 @@ export function cleanHeadline(rawTitle: string, siteName?: string): string {
 
 export function resolveMaybeUrl(candidate: string | undefined | null, baseUrl: string): string {
   if (!candidate) return '';
-  const cleaned = decodeHtmlEntities(candidate).trim();
+  const cleaned = decodeHtmlEntities(candidate).trim().replace(/ /g, '%20');
   if (!cleaned || cleaned.startsWith('data:image/svg') || cleaned.startsWith('javascript:')) {
     return '';
   }
@@ -152,6 +152,16 @@ export function resolveMaybeUrl(candidate: string | undefined | null, baseUrl: s
     return '';
   }
   return '';
+}
+
+function isErrorOrChallengeTitle(title: string): boolean {
+  const t = title.trim();
+  if (!t) return true;
+  return (
+    /^(just a moment|attention required|access denied|403 forbidden|cloudflare|security check|page not found|404\b|error\s*404|nothing found|not found)/i.test(
+      t
+    ) || /\b404\s*[-–|:]\s*(nothing found|not found|page not found)/i.test(t)
+  );
 }
 
 export interface ExtractedMeta {
@@ -174,7 +184,8 @@ export function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta 
       tag.match(/(?:property|name|itemprop)\s*=\s*["']([^"']+)["']/i) ||
       tag.match(/(?:property|name|itemprop)\s*=\s*([^\s>]+)/i);
     const contentMatch =
-      tag.match(/content\s*=\s*["']([^"']*)["']/i) ||
+      tag.match(/content\s*=\s*"([^"]*)"/i) ||
+      tag.match(/content\s*=\s*'([^']*)'/i) ||
       tag.match(/content\s*=\s*([^\s>]+)/i);
 
     if (keyMatch && contentMatch) {
@@ -269,8 +280,8 @@ export function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta 
 
   title = cleanHeadline(rawTitleCandidate, siteName);
 
-  if (/^(just a moment|attention required|access denied|403 forbidden|cloudflare|security check|page not found|404)/i.test(title)) {
-    title = '';
+  if (isErrorOrChallengeTitle(title)) {
+    return { title: '', image: '', siteName: '' };
   }
 
   const linkImgMatch = html.match(/<link[^>]+rel\s*=\s*["']image_src["'][^>]+href\s*=\s*["']([^"']+)["']/i);
@@ -287,7 +298,7 @@ export function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta 
 
   for (const cand of rawImgCandidates) {
     const resolved = resolveMaybeUrl(cand, pageUrl);
-    if (resolved && !/logo|favicon|icon|avatar|sprite|blank\.gif|1x1/i.test(resolved)) {
+    if (resolved && !/favicon|sprite|blank\.gif|1x1|logo-fb|default-og/i.test(resolved)) {
       image = resolved;
       break;
     }
@@ -319,7 +330,7 @@ export function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta 
   return { title, image, siteName };
 }
 
-export async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs = 6200): Promise<ExtractedMeta> {
+export async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs = 4500): Promise<ExtractedMeta> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -385,7 +396,44 @@ export async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs 
   }
 }
 
-export async function fetchViaMicrolink(url: string, timeoutMs = 4500): Promise<ExtractedMeta> {
+async function fetchBestDirectMeta(href: string): Promise<ExtractedMeta> {
+  const uas = [
+    'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+    'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)',
+    'WhatsApp/2.23.20.0 A',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  ];
+
+  return new Promise((resolve) => {
+    let best: ExtractedMeta = { title: '', image: '', siteName: '' };
+    let settled = false;
+    let remaining = uas.length;
+
+    for (const ua of uas) {
+      fetchHtmlWithUA(href, ua, 4500)
+        .then((res) => {
+          if (settled) return;
+          if (!best.title && res.title) best.title = res.title;
+          if (!best.image && res.image) best.image = res.image;
+          if (!best.siteName && res.siteName) best.siteName = res.siteName;
+          if (best.title && best.image) {
+            settled = true;
+            resolve(best);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          remaining -= 1;
+          if (!settled && remaining <= 0) {
+            settled = true;
+            resolve(best);
+          }
+        });
+    }
+  });
+}
+
+export async function fetchViaMicrolink(url: string, timeoutMs = 4000): Promise<ExtractedMeta> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -406,9 +454,13 @@ export async function fetchViaMicrolink(url: string, timeoutMs = 4500): Promise<
     if (json?.status === 'success' && json.data) {
       const siteName = json.data.publisher || '';
       const rawTitle = json.data.title || '';
+      const cleanedTitle = cleanHeadline(rawTitle, siteName);
+      if (isErrorOrChallengeTitle(cleanedTitle)) {
+        return { title: '', image: '', siteName: '' };
+      }
       const img = typeof json.data.image === 'string' ? json.data.image : json.data.image?.url || '';
       return {
-        title: cleanHeadline(rawTitle, siteName),
+        title: cleanedTitle,
         image: resolveMaybeUrl(img, url),
         siteName,
       };
@@ -421,7 +473,7 @@ export async function fetchViaMicrolink(url: string, timeoutMs = 4500): Promise<
   }
 }
 
-async function fetchViaAllOrigins(url: string, timeoutMs = 4800): Promise<ExtractedMeta> {
+async function fetchViaAllOrigins(url: string, timeoutMs = 4000): Promise<ExtractedMeta> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -440,33 +492,34 @@ async function fetchViaAllOrigins(url: string, timeoutMs = 4800): Promise<Extrac
   }
 }
 
-export function extractTitleFromSlug(targetUrl: URL): string {
+async function fetchViaJina(url: string, timeoutMs = 4000): Promise<ExtractedMeta> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const segments = targetUrl.pathname
-      .split('/')
-      .map((s) => decodeURIComponent(s).trim())
-      .filter(Boolean);
-
-    const meaningful = segments
-      .map((seg) =>
-        seg
-          .replace(/\.(html?|php|aspx?|jsp)$/i, '')
-          .replace(/[-_]+/g, ' ')
-          .replace(/\b\d{5,}\b/g, '')
-          .replace(/\s+/g, ' ')
-          .trim()
-      )
-      .filter(
-        (seg) =>
-          seg.length > 6 &&
-          !/^(news|article|story|details|national|politics|sports|bangladesh|world|opinion)$/i.test(seg)
-      );
-
-    if (meaningful.length === 0) return '';
-    meaningful.sort((a, b) => b.length - a.length);
-    return meaningful[0];
+    const resp = await fetch(`https://r.jina.ai/${url}`, {
+      signal: controller.signal,
+      headers: { Accept: 'text/plain' },
+    });
+    if (!resp.ok) return { title: '', image: '', siteName: '' };
+    const text = (await resp.text()).slice(0, 100_000);
+    const titleMatch = text.match(/^Title:\s*(.+)$/m);
+    const rawTitle = titleMatch ? cleanHeadline(titleMatch[1].trim()) : '';
+    const title = isErrorOrChallengeTitle(rawTitle) ? '' : rawTitle;
+    let image = '';
+    const imgRegex = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = imgRegex.exec(text)) !== null) {
+      const candidate = resolveMaybeUrl(m[1], url);
+      if (candidate && !/logo|favicon|icon|avatar|sprite|\.svg/i.test(candidate)) {
+        image = candidate;
+        break;
+      }
+    }
+    return { title, image, siteName: '' };
   } catch {
-    return '';
+    return { title: '', image: '', siteName: '' };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -508,37 +561,21 @@ export async function extractNewsFromTargetUrl(rawUrl: string): Promise<ExtractN
   }
 
   const href = safeUrl.href;
+  const direct = await fetchBestDirectMeta(href);
 
-  const [socialResult, whatsappResult, browserResult] = await Promise.all([
-    fetchHtmlWithUA(href, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', 6000),
-    fetchHtmlWithUA(href, 'WhatsApp/2.23.20.0 A', 6000),
-    fetchHtmlWithUA(
-      href,
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      6000
-    ),
-  ]);
-
-  let title = socialResult.title || whatsappResult.title || browserResult.title;
-  let image =
-    socialResult.image ||
-    whatsappResult.image ||
-    browserResult.image ||
-    extractYouTubeThumbnail(safeUrl);
-  let siteName = socialResult.siteName || whatsappResult.siteName || browserResult.siteName;
+  let title = direct.title;
+  let image = direct.image || extractYouTubeThumbnail(safeUrl);
+  let siteName = direct.siteName;
 
   if (!title || !image) {
-    const [ml, ao] = await Promise.all([
-      fetchViaMicrolink(href, 4200),
-      fetchViaAllOrigins(href, 4500),
+    const [ml, ao, jina] = await Promise.all([
+      fetchViaMicrolink(href, 4000),
+      fetchViaAllOrigins(href, 4000),
+      fetchViaJina(href, 4000),
     ]);
-    if (!title) title = ml.title || ao.title;
-    if (!image) image = ml.image || ao.image;
+    if (!title) title = ml.title || ao.title || jina.title;
+    if (!image) image = ml.image || ao.image || jina.image;
     if (!siteName) siteName = ml.siteName || ao.siteName;
-  }
-
-  if (!title) {
-    title = extractTitleFromSlug(safeUrl);
   }
 
   let proxiedImage = '';
@@ -566,7 +603,7 @@ export interface ProxiedImageResult {
 }
 
 export async function fetchProxiedImageBuffer(rawImgUrl: string, rawRef = ''): Promise<ProxiedImageResult | null> {
-  const trimmedUrl = rawImgUrl.trim();
+  const trimmedUrl = rawImgUrl.trim().replace(/ /g, '%20');
   if (!trimmedUrl) return null;
 
   let safeImgUrl: URL;
@@ -578,9 +615,9 @@ export async function fetchProxiedImageBuffer(rawImgUrl: string, rawRef = ''): P
 
   const referer = /^https?:\/\//i.test(rawRef.trim()) ? rawRef.trim() : `${safeImgUrl.protocol}//${safeImgUrl.hostname}/`;
 
-  const tryDownloadImage = async (targetHref: string, ua: string, includeReferer: boolean): Promise<ProxiedImageResult | null> => {
+  const tryDownloadImage = async (targetHref: string, ua: string, includeReferer: boolean, timeoutMs = 4500): Promise<ProxiedImageResult | null> => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6500);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const headers: Record<string, string> = {
         'User-Agent': ua,
@@ -639,25 +676,42 @@ export async function fetchProxiedImageBuffer(rawImgUrl: string, rawRef = ''): P
     }
   };
 
-  let imgData = await tryDownloadImage(
-    safeImgUrl.href,
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-    true
-  );
+  const firstSuccess = async (tasks: Promise<ProxiedImageResult | null>[]): Promise<ProxiedImageResult | null> =>
+    new Promise((resolve) => {
+      let resolved = false;
+      let remaining = tasks.length;
+      for (const task of tasks) {
+        task
+          .then((res) => {
+            if (!resolved && res) {
+              resolved = true;
+              resolve(res);
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            remaining -= 1;
+            if (!resolved && remaining <= 0) {
+              resolved = true;
+              resolve(null);
+            }
+          });
+      }
+    });
 
-  if (!imgData) {
-    imgData = await tryDownloadImage(
-      safeImgUrl.href,
-      'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-      false
-    );
-  }
+  const chromeUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+  let imgData = await firstSuccess([
+    tryDownloadImage(safeImgUrl.href, chromeUA, true, 4400),
+    tryDownloadImage(safeImgUrl.href, chromeUA, false, 4400),
+    tryDownloadImage(safeImgUrl.href, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', false, 4400),
+  ]);
 
   if (!imgData) {
     imgData = await tryDownloadImage(
       `https://wsrv.nl/?url=${encodeURIComponent(safeImgUrl.href)}&output=jpg`,
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      false
+      chromeUA,
+      false,
+      4500
     );
   }
 

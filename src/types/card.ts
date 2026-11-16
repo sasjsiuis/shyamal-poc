@@ -58,7 +58,24 @@ export type ProceduralStyleType =
   | 'minimal-polaroid'
   | 'interview-spotlight'
   | 'job-career-card'
-  | 'cyber-tech-grid';
+  | 'cyber-tech-grid'
+  | 'tv-jamuna'
+  | 'tv-ekattor'
+  | 'tv-independent'
+  | 'tv-rtv'
+  | 'tv-desh'
+  | 'portal-ntv'
+  | 'tv-ekhon'
+  | 'tv-somoy'
+  | 'paper-prothom-alo-1'
+  | 'paper-prothom-alo-2'
+  | 'portal-jagonews'
+  | 'paper-daily-star'
+  | 'portal-bdnews24'
+  | 'portal-dhakapost'
+  | 'paper-kalerkantho'
+  | 'paper-jugantor'
+  | 'paper-ittefaq';
 
 export type TemplateCategory =
   | 'সব'
@@ -111,6 +128,7 @@ export interface TemplateConfig {
     baseFontSize: number;
     singleLineFontSize: number;
   };
+  headlineAlign?: 'center' | 'left';
   defaultTextColor: string;
   defaultHighlightColor: string;
   defaultBrandMask?: {
@@ -128,6 +146,8 @@ export interface TemplateConfig {
   };
   kickerText?: string;
   footerCtaText?: string;
+  hasWebsiteUrl?: boolean;
+  websiteUrl?: string;
 }
 
 export interface TemplateOverride {
@@ -135,6 +155,7 @@ export interface TemplateOverride {
   category?: Exclude<TemplateCategory, 'সব'>;
   kickerText?: string;
   footerCtaText?: string;
+  websiteUrl?: string;
 }
 
 export interface RenderedLayoutMetrics {

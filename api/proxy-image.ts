@@ -66,7 +66,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   const reqUrl = new URL(req.url || '/', 'http://localhost');
-  const rawImgUrl = (reqUrl.searchParams.get('url') || '').trim();
+  const rawImgUrl = (reqUrl.searchParams.get('url') || '').trim().replace(/ /g, '%20');
   const rawRef = (reqUrl.searchParams.get('ref') || '').trim();
 
   if (!rawImgUrl) {
@@ -86,9 +86,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const referer = /^https?:\/\//i.test(rawRef) ? rawRef : `${safeImgUrl.protocol}//${safeImgUrl.hostname}/`;
 
-  const tryDownloadImage = async (targetHref: string, ua: string, includeReferer: boolean) => {
+  const tryDownloadImage = async (targetHref: string, ua: string, includeReferer: boolean, timeoutMs = 4400) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6500);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const headers: Record<string, string> = {
         'User-Agent': ua,
@@ -138,25 +138,43 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
   };
 
-  let imgData = await tryDownloadImage(
-    safeImgUrl.href,
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-    true
-  );
+  type ProxyData = { buffer: Buffer; contentType: string };
+  const firstSuccess = async (tasks: Promise<ProxyData | null>[]): Promise<ProxyData | null> =>
+    new Promise((resolve) => {
+      let resolved = false;
+      let remaining = tasks.length;
+      for (const task of tasks) {
+        task
+          .then((r) => {
+            if (!resolved && r) {
+              resolved = true;
+              resolve(r);
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            remaining -= 1;
+            if (!resolved && remaining <= 0) {
+              resolved = true;
+              resolve(null);
+            }
+          });
+      }
+    });
 
-  if (!imgData) {
-    imgData = await tryDownloadImage(
-      safeImgUrl.href,
-      'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-      false
-    );
-  }
+  const chromeUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+  let imgData = await firstSuccess([
+    tryDownloadImage(safeImgUrl.href, chromeUA, true, 4300),
+    tryDownloadImage(safeImgUrl.href, chromeUA, false, 4300),
+    tryDownloadImage(safeImgUrl.href, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', false, 4300),
+  ]);
 
   if (!imgData) {
     imgData = await tryDownloadImage(
       `https://wsrv.nl/?url=${encodeURIComponent(safeImgUrl.href)}&output=jpg`,
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      false
+      chromeUA,
+      false,
+      4400
     );
   }
 

@@ -2513,19 +2513,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Browse Dedicated 70+ Templates Page CTA */}
-                <button
-                  type="button"
-                  onClick={() => navigateToPage('templates')}
-                  className="flex min-h-[44px] w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-[#d6cfc2] bg-white px-3.5 py-2.5 text-[13px] font-bold text-[#1c3060] shadow-xs transition-colors hover:border-[#1c3060] hover:bg-[#faf6ef] sm:px-4 sm:text-[13.5px] dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 dark:hover:border-sky-400"
-                >
-                  <span className="inline-flex min-w-0 items-center gap-2">
-                    <LayoutGrid className="h-4 w-4 shrink-0 text-[#faab3f]" />
-                    <span className="truncate">সব {ALL_TEMPLATES.length}+ টেমপ্লেট ও ক্যাটাগরি দেখুন</span>
-                  </span>
-                  <ArrowRight className="h-4 w-4 shrink-0" />
-                </button>
-
                 {selectedTemplate.id.startsWith('custom-') && (
                   <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
                     <span className="truncate font-medium">আসল ফ্রেম সক্রিয়: {effectiveTemplate.name}</span>

@@ -5,13 +5,11 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Contrast,
   Download,
   Highlighter,
   ImagePlus,
   LayoutGrid,
   Loader2,
-  Moon,
   MousePointerClick,
   Pencil,
   Plus,
@@ -19,7 +17,6 @@ import {
   RotateCcw,
   Settings,
   Sparkles,
-  Sun,
   Tag,
   Trash2,
   Undo2,
@@ -2235,50 +2232,6 @@ export default function App() {
               <span>সব টেমপ্লেট ({ALL_TEMPLATES.length}+)</span>
             </button>
           </nav>
-
-          {/* Zone 3: Theme Switcher */}
-          <div
-            role="group"
-            aria-label="থিম নির্বাচন"
-            className="inline-flex max-w-full shrink-0 items-center gap-0.5 rounded-full border border-[#ebe4d8] bg-white p-1 shadow-[0_2px_8px_rgba(28,48,96,0.08)] dark:border-slate-700 dark:bg-slate-800"
-          >
-            <button
-              type="button"
-              onClick={() => setThemeMode('light')}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                themeMode === 'light'
-                  ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
-                  : 'text-[#334155] hover:text-[#0f172a] dark:text-slate-300 dark:hover:text-white'
-              }`}
-            >
-              <Sun className="h-3.5 w-3.5" />
-              <span>লাইট</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setThemeMode('dark')}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                themeMode === 'dark'
-                  ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
-                  : 'text-[#334155] hover:text-[#0f172a] dark:text-slate-300 dark:hover:text-white'
-              }`}
-            >
-              <Moon className="h-3.5 w-3.5" />
-              <span>ডার্ক</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setThemeMode('auto')}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                themeMode === 'auto'
-                  ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
-                  : 'text-[#334155] hover:text-[#0f172a] dark:text-slate-300 dark:hover:text-white'
-              }`}
-            >
-              <Contrast className="h-3.5 w-3.5" />
-              <span>অটো</span>
-            </button>
-          </div>
         </header>
 
         {activePage === 'templates' ? (

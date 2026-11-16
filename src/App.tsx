@@ -225,12 +225,87 @@ function persistCardState(state: SavedCardState): void {
   }
 }
 
+function normalizeExternalUrl(input: string): string {
+  const s = input.trim();
+  if (!s) return '';
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+}
+
 function isLikelyUrl(input: string): boolean {
   const s = input.trim();
   if (s.length < 8) return false;
   if (/^https?:\/\/[^\s]+\.[^\s]+/i.test(s)) return true;
   if (/^[a-z0-9-]+(\.[a-z0-9-]+)+\/[^\s]*/i.test(s)) return true;
   return false;
+}
+
+function extractYouTubeThumbClient(rawUrl: string): string {
+  try {
+    const parsed = new URL(normalizeExternalUrl(rawUrl));
+    const host = parsed.hostname.toLowerCase();
+    let videoId = '';
+    if (host.includes('youtu.be')) {
+      videoId = parsed.pathname.slice(1).split('/')[0];
+    } else if (host.includes('youtube.com')) {
+      videoId = parsed.searchParams.get('v') || '';
+      if (!videoId && parsed.pathname.startsWith('/shorts/')) {
+        videoId = parsed.pathname.split('/')[2] || '';
+      }
+    }
+    if (videoId && /^[a-zA-Z0-9_-]{8,15}$/.test(videoId)) {
+      return `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
+async function fetchMicrolinkClient(
+  rawUrl: string,
+  signal: AbortSignal
+): Promise<{ title: string; image: string }> {
+  try {
+    const target = normalizeExternalUrl(rawUrl);
+    if (!target) return { title: '', image: '' };
+    const resp = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(target)}`, {
+      signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (!resp.ok) return { title: '', image: '' };
+    const json = (await resp.json()) as {
+      status?: string;
+      data?: {
+        title?: string;
+        publisher?: string;
+        image?: { url?: string } | string;
+      };
+    };
+    if (json?.status !== 'success' || !json.data) {
+      return { title: '', image: '' };
+    }
+    let title = (json.data.title || '').trim();
+    const publisher = (json.data.publisher || '').trim();
+    if (title && publisher) {
+      for (const sep of [' | ', ' - ', ' – ', ' — ', ' :: ']) {
+        const idx = title.lastIndexOf(sep);
+        if (idx > 14 && title.slice(idx + sep.length).toLowerCase().includes(publisher.toLowerCase())) {
+          title = title.slice(0, idx).trim();
+          break;
+        }
+      }
+    }
+    const rawImg =
+      typeof json.data.image === 'string'
+        ? json.data.image
+        : json.data.image?.url || '';
+    return {
+      title,
+      image: rawImg.trim(),
+    };
+  } catch {
+    return { title: '', image: '' };
+  }
 }
 
 interface ParsedWord {
@@ -285,6 +360,7 @@ export default function App() {
   // URL & Auto-extraction state
   const [newsUrl, setNewsUrl] = useState(() => initialSavedCard?.newsUrl ?? '');
   const [isExtracting, setIsExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
   const lastFetchedUrlRef = useRef<string>(initialSavedCard?.newsUrl?.trim() || '');
   const extractAbortRef = useRef<AbortController | null>(null);
 
@@ -738,22 +814,47 @@ export default function App() {
     };
   }, [selectedTemplate.overlayUrl]);
 
-  // Load photo image
+  // Load photo image (with automatic CORS-safe proxy fallback if primary URL fails)
   useEffect(() => {
     if (!photoSrc) {
       setPhotoImg(null);
       return;
     }
     let cancelled = false;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      if (!cancelled) setPhotoImg(img);
+    let triedWsrvFallback = false;
+
+    const loadSrc = (srcToLoad: string) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (!cancelled) setPhotoImg(img);
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        if (!triedWsrvFallback) {
+          triedWsrvFallback = true;
+          let targetOriginal = '';
+          if (srcToLoad.startsWith('/api/proxy-image?')) {
+            try {
+              const u = new URL(srcToLoad, window.location.origin);
+              targetOriginal = u.searchParams.get('url') || '';
+            } catch {
+              targetOriginal = '';
+            }
+          } else if (/^https?:\/\//i.test(srcToLoad) && !srcToLoad.includes('wsrv.nl')) {
+            targetOriginal = srcToLoad;
+          }
+          if (targetOriginal) {
+            loadSrc(`https://wsrv.nl/?url=${encodeURIComponent(targetOriginal)}&output=jpg`);
+            return;
+          }
+        }
+        setPhotoImg(null);
+      };
+      img.src = srcToLoad;
     };
-    img.onerror = () => {
-      if (!cancelled) setPhotoImg(null);
-    };
-    img.src = photoSrc;
+
+    loadSrc(photoSrc);
     return () => {
       cancelled = true;
     };
@@ -849,11 +950,11 @@ export default function App() {
     [handleSelectTemplate, navigateToPage]
   );
 
-  // Automatic News Extraction from URL
-  const extractNewsFromUrl = useCallback(async (rawUrl: string) => {
+  // Automatic News Extraction from URL (server endpoint + client-side Microlink fallback)
+  const extractNewsFromUrl = useCallback(async (rawUrl: string, force = false) => {
     const trimmed = rawUrl.trim();
     if (!isLikelyUrl(trimmed)) return;
-    if (trimmed === lastFetchedUrlRef.current) return;
+    if (!force && trimmed === lastFetchedUrlRef.current) return;
 
     lastFetchedUrlRef.current = trimmed;
 
@@ -864,35 +965,75 @@ export default function App() {
     extractAbortRef.current = controller;
 
     setIsExtracting(true);
+    setExtractError(null);
     try {
-      const resp = await fetch(`/api/extract?url=${encodeURIComponent(trimmed)}`, {
-        signal: controller.signal,
-      });
-      if (!resp.ok) return;
-      const data = (await resp.json()) as {
-        title?: string;
-        image?: string;
-        proxiedImage?: string;
-      };
+      let title = '';
+      let image = '';
+      let proxiedImage = '';
+      let apiReachable = false;
+
+      try {
+        const resp = await fetch(`/api/extract?url=${encodeURIComponent(trimmed)}`, {
+          signal: controller.signal,
+        });
+        const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+        if (resp.ok && contentType.includes('application/json')) {
+          apiReachable = true;
+          const data = (await resp.json()) as {
+            title?: string;
+            image?: string;
+            proxiedImage?: string;
+          };
+          title = (data.title || '').trim();
+          image = (data.image || '').trim();
+          proxiedImage = (data.proxiedImage || '').trim();
+        }
+      } catch {
+        // Fallback to client-side extractor below
+      }
 
       if (controller.signal.aborted) return;
 
-      if (data.title && data.title.trim()) {
-        setHeadline(data.title.trim());
+      if (!title || !image) {
+        const ml = await fetchMicrolinkClient(trimmed, controller.signal);
+        if (!title && ml.title) title = ml.title;
+        if (!image && ml.image) image = ml.image;
+      }
+
+      if (!image) {
+        image = extractYouTubeThumbClient(trimmed);
+      }
+
+      if (controller.signal.aborted) return;
+
+      if (title) {
+        setHeadline(title);
         setHighlights([]);
         setTextOffsetX(0);
         setTextOffsetY(0);
       }
 
-      const nextImg = data.proxiedImage || data.image || '';
+      let nextImg = proxiedImage;
+      if (!nextImg && image) {
+        nextImg = apiReachable
+          ? `/api/proxy-image?url=${encodeURIComponent(image)}`
+          : `https://wsrv.nl/?url=${encodeURIComponent(image)}&output=jpg`;
+      }
+
       if (nextImg) {
         setPhotoZoom(1);
         setPhotoPanX(0);
         setPhotoPanY(0);
         setPhotoSrc(nextImg);
       }
+
+      if (!title && !nextImg) {
+        setExtractError('এই লিংক থেকে শিরোনাম বা ছবি পাওয়া যায়নি। ম্যানুয়ালি শিরোনাম ও ছবি দিয়ে কার্ড বানাতে পারবেন।');
+      }
     } catch {
-      // Silently ignore network aborts
+      if (!controller.signal.aborted) {
+        setExtractError('লিংক থেকে তথ্য আনতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
+      }
     } finally {
       if (extractAbortRef.current === controller) {
         setIsExtracting(false);
@@ -903,6 +1044,10 @@ export default function App() {
   // Debounced auto-fetch when typing/editing URL
   useEffect(() => {
     const trimmed = newsUrl.trim();
+    if (!trimmed) {
+      setExtractError(null);
+      return;
+    }
     if (!isLikelyUrl(trimmed)) return;
     const timer = setTimeout(() => {
       extractNewsFromUrl(trimmed);
@@ -914,9 +1059,9 @@ export default function App() {
   const handleUrlPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pasted = e.clipboardData.getData('text');
     if (pasted && isLikelyUrl(pasted)) {
-      lastFetchedUrlRef.current = '';
-      setNewsUrl(pasted.trim());
-      extractNewsFromUrl(pasted.trim());
+      const cleaned = pasted.trim();
+      setNewsUrl(cleaned);
+      extractNewsFromUrl(cleaned, true);
     }
   };
 
@@ -1627,7 +1772,10 @@ export default function App() {
             activeFont={activeFont}
             newsUrl={newsUrl}
             onNewsUrlChange={(val) => {
-              lastFetchedUrlRef.current = '';
+              if (val.trim() !== lastFetchedUrlRef.current) {
+                lastFetchedUrlRef.current = '';
+                setExtractError(null);
+              }
               setNewsUrl(val);
             }}
             onNewsUrlPaste={handleUrlPaste}
@@ -1637,28 +1785,50 @@ export default function App() {
           <>
             {/* News URL Input Box */}
             <section className="mb-4 rounded-2xl border border-[#ebe5da] bg-white p-3.5 shadow-[0_2px_12px_rgba(28,48,96,0.05)] sm:p-4 dark:border-slate-700/80 dark:bg-slate-800/95">
-              <div className="relative">
-                <input
-                  type="url"
-                  value={newsUrl}
-                  onPaste={handleUrlPaste}
-                  onChange={(e) => {
-                    lastFetchedUrlRef.current = '';
-                    setNewsUrl(e.target.value);
-                  }}
-                  placeholder="এখানে নিউজের লিংক পেস্ট করুন..."
-                  aria-label="নিউজের লিংক"
-                  className="w-full rounded-xl border border-[#dcd6cb] bg-white px-4 py-3 pr-11 text-[15px] text-slate-800 placeholder:text-[#78716c] focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400"
-                />
-                {isExtracting && (
-                  <div
-                    className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1c3060] dark:text-sky-400"
-                    title="নিউজ আনা হচ্ছে..."
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <input
+                    type="url"
+                    value={newsUrl}
+                    onPaste={handleUrlPaste}
+                    onChange={(e) => {
+                      const nextVal = e.target.value;
+                      if (nextVal.trim() !== lastFetchedUrlRef.current) {
+                        lastFetchedUrlRef.current = '';
+                        setExtractError(null);
+                      }
+                      setNewsUrl(nextVal);
+                    }}
+                    placeholder="এখানে নিউজের লিংক পেস্ট করুন..."
+                    aria-label="নিউজের লিংক"
+                    className="w-full rounded-xl border border-[#dcd6cb] bg-white px-4 py-3 pr-11 text-[15px] text-slate-800 placeholder:text-[#78716c] focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400"
+                  />
+                  {isExtracting && (
+                    <div
+                      className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1c3060] dark:text-sky-400"
+                      title="নিউজ আনা হচ্ছে..."
+                    >
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    </div>
+                  )}
+                </div>
+                {isLikelyUrl(newsUrl) && (
+                  <button
+                    type="button"
+                    disabled={isExtracting}
+                    onClick={() => extractNewsFromUrl(newsUrl, true)}
+                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#1c3060] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#15254b] disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
                   >
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  </div>
+                    <RotateCcw className={`h-4 w-4 ${isExtracting ? 'animate-spin' : ''}`} />
+                    <span>{isExtracting ? 'আনা হচ্ছে...' : 'তথ্য আনুন'}</span>
+                  </button>
                 )}
               </div>
+              {extractError && (
+                <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+                  {extractError}
+                </p>
+              )}
             </section>
 
             {/* 2-Column Workspace */}

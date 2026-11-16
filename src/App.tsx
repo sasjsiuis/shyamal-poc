@@ -1,43 +1,229 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowRight,
+  ArrowUp,
   Check,
   ChevronDown,
   ChevronUp,
   Contrast,
   Download,
   Highlighter,
+  ImagePlus,
+  LayoutGrid,
   Loader2,
   Moon,
   MousePointerClick,
+  Pencil,
   Plus,
   RotateCcw,
   Settings,
   Sparkles,
   Sun,
+  Tag,
   Trash2,
   Upload,
 } from 'lucide-react';
 import { RangeSlider } from './components/RangeSlider';
-import { TemplateGallery } from './components/TemplateGallery';
+import { TemplatesPage } from './components/TemplatesPage';
 import {
+  ALL_TEMPLATES,
   BUILTIN_FONTS,
   PSD_GREEN_TEMPLATE,
   PSD_MAROON_TEMPLATE,
+  TEMPLATE_CATEGORIES,
 } from './data/templates';
 import type {
   ExportFormat,
   FontOption,
   HighlightRange,
   LineMode,
+  LogoBadgeStyle,
   LogoSettings,
   RenderedLayoutMetrics,
+  TemplateCategory,
   TemplateConfig,
+  TemplateOverride,
   ThemeMode,
 } from './types/card';
 import { buildHighlightMask, renderNewsCard } from './utils/canvasRenderer';
 
 const CUSTOM_FONTS_STORAGE_KEY = 'news_card_custom_fonts_v1';
 const THEME_STORAGE_KEY = 'news_card_theme_mode_v1';
+const CATEGORY_NAMES_STORAGE_KEY = 'news_card_category_names_v1';
+const TEMPLATE_OVERRIDES_STORAGE_KEY = 'news_card_template_overrides_v1';
+const CARD_AUTOSAVE_STORAGE_KEY = 'news_card_autosave_v1';
+
+interface SavedCardState {
+  version: 1;
+  newsUrl: string;
+  selectedTemplateId: string;
+  customTemplate?: TemplateConfig | null;
+  headline: string;
+  highlights: HighlightRange[];
+  highlightTab: 'words' | 'manual';
+  lineMode: LineMode;
+  fontSizePercent: number;
+  lineGapPercent: number;
+  selectedFontId: string;
+  textOffsetX: number;
+  textOffsetY: number;
+  textShadow: boolean;
+  textColor: string;
+  highlightColor: string;
+  photoSrc: string;
+  photoZoom: number;
+  photoPanX: number;
+  photoPanY: number;
+  logoSettings: LogoSettings;
+  exportFormat: ExportFormat;
+}
+
+function clampNumber(val: unknown, min: number, max: number, fallback: number): number {
+  if (typeof val !== 'number' || !Number.isFinite(val)) return fallback;
+  return Math.max(min, Math.min(max, val));
+}
+
+function loadSavedCardState(): SavedCardState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(CARD_AUTOSAVE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SavedCardState> | null;
+    if (!parsed || typeof parsed !== 'object' || parsed.version !== 1) return null;
+
+    const highlights: HighlightRange[] = Array.isArray(parsed.highlights)
+      ? parsed.highlights.filter(
+          (h): h is HighlightRange =>
+            Boolean(h) &&
+            typeof h.id === 'string' &&
+            typeof h.start === 'number' &&
+            typeof h.end === 'number' &&
+            typeof h.text === 'string'
+        )
+      : [];
+
+    const logoRaw = parsed.logoSettings;
+    const rawBadge = logoRaw?.badgeStyle;
+    const validBadgeStyle: LogoBadgeStyle =
+      rawBadge === 'auto' || rawBadge === 'white' || rawBadge === 'frosted' || rawBadge === 'none'
+        ? rawBadge
+        : 'auto';
+    const logoSettings: LogoSettings = {
+      dataUrl: typeof logoRaw?.dataUrl === 'string' ? logoRaw.dataUrl : null,
+      scale: clampNumber(logoRaw?.scale, 25, 200, 100),
+      x: clampNumber(logoRaw?.x, -100, 100, 0),
+      y: clampNumber(logoRaw?.y, -100, 100, 0),
+      hideDefaultBrand: Boolean(logoRaw?.hideDefaultBrand),
+      badgeStyle: validBadgeStyle,
+    };
+
+    const customTemplate =
+      parsed.customTemplate &&
+      typeof parsed.customTemplate === 'object' &&
+      typeof parsed.customTemplate.id === 'string' &&
+      typeof parsed.customTemplate.canvasWidth === 'number' &&
+      typeof parsed.customTemplate.canvasHeight === 'number'
+        ? parsed.customTemplate
+        : null;
+
+    const matchedBuiltin = ALL_TEMPLATES.find((t) => t.id === parsed.selectedTemplateId);
+    const resolvedTemplate =
+      matchedBuiltin ||
+      (customTemplate && customTemplate.id === parsed.selectedTemplateId ? customTemplate : null) ||
+      PSD_GREEN_TEMPLATE;
+
+    return {
+      version: 1,
+      newsUrl: typeof parsed.newsUrl === 'string' ? parsed.newsUrl : '',
+      selectedTemplateId: resolvedTemplate.id,
+      customTemplate:
+        customTemplate && customTemplate.id === resolvedTemplate.id ? customTemplate : null,
+      headline:
+        typeof parsed.headline === 'string'
+          ? parsed.headline
+          : 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ',
+      highlights,
+      highlightTab: parsed.highlightTab === 'manual' ? 'manual' : 'words',
+      lineMode:
+        parsed.lineMode === 'one' || parsed.lineMode === 'two' || parsed.lineMode === 'auto'
+          ? parsed.lineMode
+          : 'auto',
+      fontSizePercent: clampNumber(parsed.fontSizePercent, 50, 180, 100),
+      lineGapPercent: clampNumber(parsed.lineGapPercent, 60, 160, 92),
+      selectedFontId:
+        typeof parsed.selectedFontId === 'string' && parsed.selectedFontId
+          ? parsed.selectedFontId
+          : 'kalpurush',
+      textOffsetX: clampNumber(parsed.textOffsetX, -0.45, 0.45, 0),
+      textOffsetY: clampNumber(parsed.textOffsetY, -0.45, 0.45, 0),
+      textShadow: Boolean(parsed.textShadow),
+      textColor:
+        typeof parsed.textColor === 'string' && parsed.textColor
+          ? parsed.textColor
+          : resolvedTemplate.defaultTextColor,
+      highlightColor:
+        typeof parsed.highlightColor === 'string' && parsed.highlightColor
+          ? parsed.highlightColor
+          : resolvedTemplate.defaultHighlightColor,
+      photoSrc:
+        typeof parsed.photoSrc === 'string' && parsed.photoSrc
+          ? parsed.photoSrc
+          : '/sample/parliament.jpg',
+      photoZoom: clampNumber(parsed.photoZoom, 1, 3, 1),
+      photoPanX: clampNumber(parsed.photoPanX, -100, 100, 0),
+      photoPanY: clampNumber(parsed.photoPanY, -100, 100, 0),
+      logoSettings,
+      exportFormat: parsed.exportFormat === 'jpeg' ? 'jpeg' : 'png',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistCardState(state: SavedCardState): void {
+  if (typeof window === 'undefined') return;
+
+  const tryWrite = (candidate: SavedCardState): boolean => {
+    try {
+      const serialized = JSON.stringify(candidate);
+      if (serialized.length > 4_200_000) return false;
+      localStorage.setItem(CARD_AUTOSAVE_STORAGE_KEY, serialized);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (tryWrite(state)) return;
+
+  // Fallback 1: Strip oversized custom frame overlay data URL if exceeding localStorage quota
+  const withoutBigCustomOverlay: SavedCardState = state.customTemplate
+    ? {
+        ...state,
+        selectedTemplateId: PSD_GREEN_TEMPLATE.id,
+        customTemplate: null,
+      }
+    : state;
+  if (tryWrite(withoutBigCustomOverlay)) return;
+
+  // Fallback 2: Strip oversized logo data URL
+  const withoutLogoData: SavedCardState = {
+    ...withoutBigCustomOverlay,
+    logoSettings: {
+      ...withoutBigCustomOverlay.logoSettings,
+      dataUrl: null,
+    },
+  };
+  if (tryWrite(withoutLogoData)) return;
+
+  // Fallback 3: Strip large uploaded data-URI photo so all text, highlights, crop, and template choices still persist
+  if (withoutLogoData.photoSrc.startsWith('data:')) {
+    tryWrite({
+      ...withoutLogoData,
+      photoSrc: '/sample/parliament.jpg',
+    });
+  }
+}
 
 function isLikelyUrl(input: string): boolean {
   const s = input.trim();
@@ -55,6 +241,8 @@ interface ParsedWord {
 }
 
 export default function App() {
+  const [initialSavedCard] = useState<SavedCardState | null>(() => loadSavedCardState());
+
   // Theme state ('light' | 'dark' | 'auto') — defaults to 'auto'
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     try {
@@ -95,63 +283,175 @@ export default function App() {
   }, [themeMode]);
 
   // URL & Auto-extraction state
-  const [newsUrl, setNewsUrl] = useState('');
+  const [newsUrl, setNewsUrl] = useState(() => initialSavedCard?.newsUrl ?? '');
   const [isExtracting, setIsExtracting] = useState(false);
-  const lastFetchedUrlRef = useRef<string>('');
+  const lastFetchedUrlRef = useRef<string>(initialSavedCard?.newsUrl?.trim() || '');
   const extractAbortRef = useRef<AbortController | null>(null);
 
-  // Template state (defaults to সবুজ টেমপ্লেট)
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateConfig>(PSD_GREEN_TEMPLATE);
+  // Template state (defaults to সবুজ টেমপ্লেট or restored auto-saved template)
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateConfig>(() => {
+    if (initialSavedCard) {
+      if (
+        initialSavedCard.customTemplate &&
+        initialSavedCard.customTemplate.id === initialSavedCard.selectedTemplateId
+      ) {
+        return initialSavedCard.customTemplate;
+      }
+      const found = ALL_TEMPLATES.find((t) => t.id === initialSavedCard.selectedTemplateId);
+      if (found) return found;
+    }
+    return PSD_GREEN_TEMPLATE;
+  });
   const [overlayImg, setOverlayImg] = useState<HTMLImageElement | null>(null);
 
-  // Headline & Highlight state — initialized with user's sample card so user immediately sees a ready card
-  const [headline, setHeadline] = useState('ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ');
-  const [highlights, setHighlights] = useState<HighlightRange[]>([
-    { id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' },
-  ]);
+  // Category & Photo Card Name Customization (persisted in localStorage)
+  const [categoryNames, setCategoryNames] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem(CATEGORY_NAMES_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return {};
+  });
+
+  const [templateOverrides, setTemplateOverrides] = useState<Record<string, TemplateOverride>>(() => {
+    try {
+      const raw = localStorage.getItem(TEMPLATE_OVERRIDES_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return {};
+  });
+
+  const [showRenamePanel, setShowRenamePanel] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CATEGORY_NAMES_STORAGE_KEY, JSON.stringify(categoryNames));
+    } catch {
+      // ignore
+    }
+  }, [categoryNames]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TEMPLATE_OVERRIDES_STORAGE_KEY, JSON.stringify(templateOverrides));
+    } catch {
+      // ignore
+    }
+  }, [templateOverrides]);
+
+  // Headline & Highlight state — initialized from auto-saved state or sample card
+  const [headline, setHeadline] = useState(
+    () => initialSavedCard?.headline ?? 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ'
+  );
+  const [highlights, setHighlights] = useState<HighlightRange[]>(
+    () =>
+      initialSavedCard?.highlights ?? [
+        { id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' },
+      ]
+  );
   const [selectionHint, setSelectionHint] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const selectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
 
   // Word-by-word highlight UI tab ('words' | 'manual')
-  const [highlightTab, setHighlightTab] = useState<'words' | 'manual'>('words');
-
-  // Typography & Position controls
-  const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [showExtraTemplates, setShowExtraTemplates] = useState(false);
-  const [lineMode, setLineMode] = useState<LineMode>('auto');
-  const [fontSizePercent, setFontSizePercent] = useState<number>(100);
-  const [lineGapPercent, setLineGapPercent] = useState<number>(92);
-  const [customFonts, setCustomFonts] = useState<FontOption[]>([]);
-  const [selectedFontId, setSelectedFontId] = useState<string>('kalpurush');
-  const [fontsLoadedTick, setFontsLoadedTick] = useState(0);
-
-  const [textOffsetX, setTextOffsetX] = useState<number>(0);
-  const [textOffsetY, setTextOffsetY] = useState<number>(0);
-  const [textShadow, setTextShadow] = useState<boolean>(false);
-  const [textColor, setTextColor] = useState<string>(PSD_GREEN_TEMPLATE.defaultTextColor);
-  const [highlightColor, setHighlightColor] = useState<string>(
-    PSD_GREEN_TEMPLATE.defaultHighlightColor
+  const [highlightTab, setHighlightTab] = useState<'words' | 'manual'>(
+    () => initialSavedCard?.highlightTab ?? 'words'
   );
 
-  // Photo state & controls — initialized with user's sample card photo
-  const [photoSrc, setPhotoSrc] = useState<string>('/sample/parliament.jpg');
+  // Page navigation ('generator' | 'templates')
+  const [activePage, setActivePage] = useState<'generator' | 'templates'>(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#templates') {
+      return 'templates';
+    }
+    return 'generator';
+  });
+
+  useEffect(() => {
+    const onHashChange = () => {
+      setActivePage(window.location.hash === '#templates' ? 'templates' : 'generator');
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const navigateToPage = useCallback((page: 'generator' | 'templates') => {
+    setActivePage(page);
+    if (typeof window !== 'undefined') {
+      const targetHash = page === 'templates' ? '#templates' : '';
+      if (window.location.hash !== targetHash) {
+        window.history.pushState(null, '', targetHash || window.location.pathname + window.location.search);
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
+
+  // Typography & Position controls
+  const [showMoreOptions, setShowMoreOptions] = useState(true);
+  const [lineMode, setLineMode] = useState<LineMode>(() => initialSavedCard?.lineMode ?? 'auto');
+  const [fontSizePercent, setFontSizePercent] = useState<number>(
+    () => initialSavedCard?.fontSizePercent ?? 100
+  );
+  const [lineGapPercent, setLineGapPercent] = useState<number>(
+    () => initialSavedCard?.lineGapPercent ?? 92
+  );
+  const [customFonts, setCustomFonts] = useState<FontOption[]>([]);
+  const [selectedFontId, setSelectedFontId] = useState<string>(
+    () => initialSavedCard?.selectedFontId ?? 'kalpurush'
+  );
+  const [fontsLoadedTick, setFontsLoadedTick] = useState(0);
+
+  const [textOffsetX, setTextOffsetX] = useState<number>(
+    () => initialSavedCard?.textOffsetX ?? 0
+  );
+  const [textOffsetY, setTextOffsetY] = useState<number>(
+    () => initialSavedCard?.textOffsetY ?? 0
+  );
+  const [textShadow, setTextShadow] = useState<boolean>(
+    () => initialSavedCard?.textShadow ?? false
+  );
+  const [textColor, setTextColor] = useState<string>(
+    () => initialSavedCard?.textColor ?? PSD_GREEN_TEMPLATE.defaultTextColor
+  );
+  const [highlightColor, setHighlightColor] = useState<string>(
+    () => initialSavedCard?.highlightColor ?? PSD_GREEN_TEMPLATE.defaultHighlightColor
+  );
+
+  // Photo state & controls — initialized from auto-saved state or sample card photo
+  const [photoSrc, setPhotoSrc] = useState<string>(
+    () => initialSavedCard?.photoSrc ?? '/sample/parliament.jpg'
+  );
   const [photoImg, setPhotoImg] = useState<HTMLImageElement | null>(null);
-  const [photoZoom, setPhotoZoom] = useState<number>(1);
-  const [photoPanX, setPhotoPanX] = useState<number>(0);
-  const [photoPanY, setPhotoPanY] = useState<number>(0);
+  const [photoZoom, setPhotoZoom] = useState<number>(() => initialSavedCard?.photoZoom ?? 1);
+  const [photoPanX, setPhotoPanX] = useState<number>(() => initialSavedCard?.photoPanX ?? 0);
+  const [photoPanY, setPhotoPanY] = useState<number>(() => initialSavedCard?.photoPanY ?? 0);
 
   // Logo & Export format state
-  const [logoSettings, setLogoSettings] = useState<LogoSettings>({
-    dataUrl: null,
-    scale: 100,
-    x: 0,
-    y: 0,
-    hideDefaultBrand: false,
-  });
+  const [logoSettings, setLogoSettings] = useState<LogoSettings>(
+    () =>
+      initialSavedCard?.logoSettings ?? {
+        dataUrl: null,
+        scale: 100,
+        x: 0,
+        y: 0,
+        hideDefaultBrand: false,
+        badgeStyle: 'auto',
+      }
+  );
   const [logoImg, setLogoImg] = useState<HTMLImageElement | null>(null);
   const [officialLogoImg, setOfficialLogoImg] = useState<HTMLImageElement | null>(null);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('png');
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(
+    () => initialSavedCard?.exportFormat ?? 'png'
+  );
   const [downloadDone, setDownloadDone] = useState(false);
 
   // File input refs
@@ -202,6 +502,94 @@ export default function App() {
     () => allFonts.find((f) => f.id === selectedFontId) || BUILTIN_FONTS[0],
     [allFonts, selectedFontId]
   );
+
+  // Merge selectedTemplate with any user-customized card name, category, kicker, or footer CTA
+  const effectiveTemplate = useMemo<TemplateConfig>(() => {
+    const ov = templateOverrides[selectedTemplate.id];
+    const effectiveCategory = ov?.category || selectedTemplate.category;
+    const effectiveName =
+      ov?.name !== undefined && ov.name.trim() ? ov.name : selectedTemplate.name;
+    const renamedCat = categoryNames[effectiveCategory]?.trim();
+
+    let effectiveKicker = selectedTemplate.kickerText;
+    if (ov?.kickerText !== undefined) {
+      effectiveKicker = ov.kickerText;
+    } else if (
+      renamedCat &&
+      selectedTemplate.kickerText &&
+      selectedTemplate.kickerText === selectedTemplate.category
+    ) {
+      effectiveKicker = renamedCat;
+    } else if (ov?.category && selectedTemplate.styleType !== 'psd-overlay') {
+      effectiveKicker = renamedCat || ov.category;
+    }
+
+    const effectiveFooterCta =
+      ov?.footerCtaText !== undefined ? ov.footerCtaText : selectedTemplate.footerCtaText;
+
+    return {
+      ...selectedTemplate,
+      name: effectiveName,
+      category: effectiveCategory,
+      kickerText: effectiveKicker,
+      footerCtaText: effectiveFooterCta,
+    };
+  }, [selectedTemplate, templateOverrides, categoryNames]);
+
+  const handleRenameCategory = useCallback(
+    (categoryKey: Exclude<TemplateCategory, 'সব'>, newName: string) => {
+      const trimmed = newName.trim();
+      setCategoryNames((prev) => {
+        if (!trimmed || trimmed === categoryKey) {
+          const next = { ...prev };
+          delete next[categoryKey];
+          return next;
+        }
+        return { ...prev, [categoryKey]: trimmed };
+      });
+    },
+    []
+  );
+
+  const handleResetCategoryName = useCallback((categoryKey: Exclude<TemplateCategory, 'সব'>) => {
+    setCategoryNames((prev) => {
+      const next = { ...prev };
+      delete next[categoryKey];
+      return next;
+    });
+  }, []);
+
+  const handleUpdateTemplateOverride = useCallback(
+    (templateId: string, patch: TemplateOverride) => {
+      setTemplateOverrides((prev) => ({
+        ...prev,
+        [templateId]: {
+          ...prev[templateId],
+          ...patch,
+        },
+      }));
+    },
+    []
+  );
+
+  const handleResetTemplateOverride = useCallback((templateId: string) => {
+    setTemplateOverrides((prev) => {
+      const next = { ...prev };
+      delete next[templateId];
+      return next;
+    });
+  }, []);
+
+  const handleUpdateActiveTemplateOverride = useCallback(
+    (patch: TemplateOverride) => {
+      handleUpdateTemplateOverride(selectedTemplate.id, patch);
+    },
+    [selectedTemplate.id, handleUpdateTemplateOverride]
+  );
+
+  const handleResetActiveTemplateOverride = useCallback(() => {
+    handleResetTemplateOverride(selectedTemplate.id);
+  }, [selectedTemplate.id, handleResetTemplateOverride]);
 
   // Extract all individual words from the current headline with character indices
   const parsedWords = useMemo<ParsedWord[]>(() => {
@@ -453,6 +841,14 @@ export default function App() {
     [selectedTemplate, newsUrl, headline]
   );
 
+  const handleEditTemplateFromTemplatesPage = useCallback(
+    (tpl: TemplateConfig) => {
+      handleSelectTemplate(tpl);
+      navigateToPage('generator');
+    },
+    [handleSelectTemplate, navigateToPage]
+  );
+
   // Automatic News Extraction from URL
   const extractNewsFromUrl = useCallback(async (rawUrl: string) => {
     const trimmed = rawUrl.trim();
@@ -524,16 +920,88 @@ export default function App() {
     }
   };
 
+  // Auto-save card state to localStorage (debounced + synchronous flush on pagehide/beforeunload)
+  const latestCardSnapshot = useMemo<SavedCardState>(
+    () => ({
+      version: 1,
+      newsUrl,
+      selectedTemplateId: selectedTemplate.id,
+      customTemplate: selectedTemplate.id.startsWith('custom-') ? selectedTemplate : null,
+      headline,
+      highlights,
+      highlightTab,
+      lineMode,
+      fontSizePercent,
+      lineGapPercent,
+      selectedFontId,
+      textOffsetX,
+      textOffsetY,
+      textShadow,
+      textColor,
+      highlightColor,
+      photoSrc,
+      photoZoom,
+      photoPanX,
+      photoPanY,
+      logoSettings,
+      exportFormat,
+    }),
+    [
+      newsUrl,
+      selectedTemplate,
+      headline,
+      highlights,
+      highlightTab,
+      lineMode,
+      fontSizePercent,
+      lineGapPercent,
+      selectedFontId,
+      textOffsetX,
+      textOffsetY,
+      textShadow,
+      textColor,
+      highlightColor,
+      photoSrc,
+      photoZoom,
+      photoPanX,
+      photoPanY,
+      logoSettings,
+      exportFormat,
+    ]
+  );
+
+  const latestCardSnapshotRef = useRef<SavedCardState>(latestCardSnapshot);
+  latestCardSnapshotRef.current = latestCardSnapshot;
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      persistCardState(latestCardSnapshot);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [latestCardSnapshot]);
+
+  useEffect(() => {
+    const flushAutosave = () => {
+      persistCardState(latestCardSnapshotRef.current);
+    };
+    window.addEventListener('pagehide', flushAutosave);
+    window.addEventListener('beforeunload', flushAutosave);
+    return () => {
+      window.removeEventListener('pagehide', flushAutosave);
+      window.removeEventListener('beforeunload', flushAutosave);
+    };
+  }, []);
+
   // Render Canvas Preview
   useEffect(() => {
     const canvas = previewCanvasRef.current;
     if (!canvas) return;
 
-    if (canvas.width !== selectedTemplate.canvasWidth) {
-      canvas.width = selectedTemplate.canvasWidth;
+    if (canvas.width !== effectiveTemplate.canvasWidth) {
+      canvas.width = effectiveTemplate.canvasWidth;
     }
-    if (canvas.height !== selectedTemplate.canvasHeight) {
-      canvas.height = selectedTemplate.canvasHeight;
+    if (canvas.height !== effectiveTemplate.canvasHeight) {
+      canvas.height = effectiveTemplate.canvasHeight;
     }
 
     const ctx = canvas.getContext('2d');
@@ -541,7 +1009,7 @@ export default function App() {
 
     const metrics = renderNewsCard({
       ctx,
-      template: selectedTemplate,
+      template: effectiveTemplate,
       overlayImg,
       photoImg,
       logoImg,
@@ -567,10 +1035,11 @@ export default function App() {
 
     layoutMetricsRef.current = metrics;
   }, [
-    selectedTemplate,
+    effectiveTemplate,
     overlayImg,
     photoImg,
     logoImg,
+    officialLogoImg,
     headline,
     highlights,
     lineMode,
@@ -949,14 +1418,14 @@ export default function App() {
   // Download Card
   const handleDownloadCard = () => {
     const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = selectedTemplate.canvasWidth;
-    exportCanvas.height = selectedTemplate.canvasHeight;
+    exportCanvas.width = effectiveTemplate.canvasWidth;
+    exportCanvas.height = effectiveTemplate.canvasHeight;
     const ctx = exportCanvas.getContext('2d');
     if (!ctx) return;
 
     renderNewsCard({
       ctx,
-      template: selectedTemplate,
+      template: effectiveTemplate,
       overlayImg,
       photoImg,
       logoImg,
@@ -981,7 +1450,11 @@ export default function App() {
 
     const mime = exportFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
     const ext = exportFormat === 'jpeg' ? 'jpg' : 'png';
-    const filename = `news-photo-card-${Date.now()}.${ext}`;
+    const safeCardName = effectiveTemplate.name
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .replace(/\s+/g, '-');
+    const filename = `${safeCardName || 'news-photo-card'}-${Date.now()}.${ext}`;
 
     const triggerDownload = (href: string, revokeAfter = false) => {
       const link = document.createElement('a');
@@ -1043,13 +1516,54 @@ export default function App() {
         className="hidden"
       />
 
-      <div className="mx-auto max-w-[1040px]">
-        {/* Top Row: Theme Switcher */}
-        <div className="flex justify-end mb-1">
+      <div className="mx-auto max-w-[1160px]">
+        {/* Clean 3-Zone Top Navigation Bar */}
+        <header className="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e8dfd0] pb-3.5 dark:border-slate-800">
+          {/* Zone 1: Brand Title */}
+          <button
+            type="button"
+            onClick={() => navigateToPage('generator')}
+            className="cursor-pointer text-left text-lg font-bold tracking-tight text-[#1c3060] sm:text-xl whitespace-nowrap shrink-0 dark:text-slate-100"
+          >
+            নিউজ ফটো কার্ড জেনারেটর
+          </button>
+
+          {/* Zone 2: Page Navigation Links */}
+          <nav
+            aria-label="পেইজ নেভিগেশন"
+            className="flex items-center gap-1 rounded-xl border border-[#e5dccd] bg-white p-1 shadow-[0_1px_6px_rgba(28,48,96,0.05)] dark:border-slate-700 dark:bg-slate-800"
+          >
+            <button
+              type="button"
+              onClick={() => navigateToPage('generator')}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-colors whitespace-nowrap shrink-0 sm:text-[13px] ${
+                activePage === 'generator'
+                  ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                  : 'text-[#475569] hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
+              }`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              <span>কার্ড জেনারেটর</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateToPage('templates')}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-colors whitespace-nowrap shrink-0 sm:text-[13px] ${
+                activePage === 'templates'
+                  ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                  : 'text-[#475569] hover:text-[#1c3060] dark:text-slate-300 dark:hover:text-white'
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>সব টেমপ্লেট ({ALL_TEMPLATES.length}+)</span>
+            </button>
+          </nav>
+
+          {/* Zone 3: Theme Switcher */}
           <div
             role="group"
             aria-label="থিম নির্বাচন"
-            className="inline-flex items-center gap-0.5 rounded-full border border-[#ebe4d8] bg-white p-1 shadow-[0_2px_8px_rgba(28,48,96,0.08)] dark:border-slate-700 dark:bg-slate-800"
+            className="inline-flex items-center gap-0.5 rounded-full border border-[#ebe4d8] bg-white p-1 shadow-[0_2px_8px_rgba(28,48,96,0.08)] shrink-0 dark:border-slate-700 dark:bg-slate-800"
           >
             <button
               type="button"
@@ -1088,150 +1602,223 @@ export default function App() {
               <span>অটো</span>
             </button>
           </div>
-        </div>
-
-        {/* Header */}
-        <header className="mb-5 text-center">
-          <h1
-            className="text-[26px] font-bold tracking-tight text-[#1c3060] sm:text-[31px] dark:text-slate-100"
-            style={{ textWrap: 'balance' }}
-          >
-            নিউজ ফটো কার্ড জেনারেটর
-          </h1>
-          <p className="mt-1 text-[13.5px] text-[#6b655e] sm:text-[14.5px] dark:text-slate-400">
-            নিউজের লিংক দিন — শিরোনাম আর ছবি বসে কার্ড রেডি হয়ে যাবে
-          </p>
         </header>
 
-        {/* News URL Input Box */}
-        <section className="mb-4 rounded-2xl border border-[#ebe5da] bg-white p-3.5 shadow-[0_2px_12px_rgba(28,48,96,0.05)] sm:p-4 dark:border-slate-700/80 dark:bg-slate-800/95">
-          <div className="relative">
-            <input
-              type="url"
-              value={newsUrl}
-              onPaste={handleUrlPaste}
-              onChange={(e) => {
-                lastFetchedUrlRef.current = '';
-                setNewsUrl(e.target.value);
-              }}
-              placeholder="এখানে নিউজের লিংক পেস্ট করুন..."
-              aria-label="নিউজের লিংক"
-              className="w-full rounded-xl border border-[#dcd6cb] bg-white px-4 py-3 pr-11 text-[15px] text-slate-800 placeholder:text-[#78716c] focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400"
-            />
-            {isExtracting && (
-              <div
-                className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1c3060] dark:text-sky-400"
-                title="নিউজ আনা হচ্ছে..."
-              >
-                <Loader2 className="h-5 w-5 animate-spin" />
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* 2-Column Workspace */}
-        <main className="grid grid-cols-1 items-start gap-4 md:grid-cols-[480px_1fr]">
-          {/* LEFT COLUMN: Card Preview + Download + Template Buttons */}
-          <div className="w-full">
-            <div className="rounded-2xl border border-[#ebe5da] bg-white p-3 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
-              <div className="overflow-hidden rounded-xl">
-                <canvas
-                  ref={previewCanvasRef}
-                  width={selectedTemplate.canvasWidth}
-                  height={selectedTemplate.canvasHeight}
-                  onMouseDown={(e) => startCanvasDrag(e.clientX, e.clientY)}
-                  onMouseMove={(e) => moveCanvasDrag(e.clientX, e.clientY)}
-                  onMouseUp={endCanvasDrag}
-                  onMouseLeave={endCanvasDrag}
-                  onTouchStart={(e) => {
-                    if (e.touches.length === 1) {
-                      startCanvasDrag(e.touches[0].clientX, e.touches[0].clientY);
-                    }
+        {activePage === 'templates' ? (
+          <TemplatesPage
+            selectedTemplateId={selectedTemplate.id}
+            onEditTemplate={handleEditTemplateFromTemplatesPage}
+            onBackToGenerator={() => navigateToPage('generator')}
+            categoryNames={categoryNames}
+            onRenameCategory={handleRenameCategory}
+            onResetCategoryName={handleResetCategoryName}
+            templateOverrides={templateOverrides}
+            onUpdateTemplateOverride={handleUpdateTemplateOverride}
+            onResetTemplateOverride={handleResetTemplateOverride}
+            photoImg={photoImg}
+            logoImg={logoImg}
+            officialLogoImg={officialLogoImg}
+            logoSettings={logoSettings}
+            onChangeLogoBadgeStyle={(badgeStyle) =>
+              setLogoSettings((prev) => ({ ...prev, badgeStyle }))
+            }
+            headline={headline}
+            highlights={highlights}
+            activeFont={activeFont}
+            newsUrl={newsUrl}
+            onNewsUrlChange={(val) => {
+              lastFetchedUrlRef.current = '';
+              setNewsUrl(val);
+            }}
+            onNewsUrlPaste={handleUrlPaste}
+            isExtracting={isExtracting}
+          />
+        ) : (
+          <>
+            {/* News URL Input Box */}
+            <section className="mb-4 rounded-2xl border border-[#ebe5da] bg-white p-3.5 shadow-[0_2px_12px_rgba(28,48,96,0.05)] sm:p-4 dark:border-slate-700/80 dark:bg-slate-800/95">
+              <div className="relative">
+                <input
+                  type="url"
+                  value={newsUrl}
+                  onPaste={handleUrlPaste}
+                  onChange={(e) => {
+                    lastFetchedUrlRef.current = '';
+                    setNewsUrl(e.target.value);
                   }}
-                  onTouchMove={(e) => {
-                    if (e.touches.length === 1 && dragRef.current.mode !== 'none') {
-                      e.preventDefault();
-                      moveCanvasDrag(e.touches[0].clientX, e.touches[0].clientY);
-                    }
-                  }}
-                  onTouchEnd={endCanvasDrag}
-                  className="block h-auto w-full cursor-grab select-none touch-none active:cursor-grabbing"
+                  placeholder="এখানে নিউজের লিংক পেস্ট করুন..."
+                  aria-label="নিউজের লিংক"
+                  className="w-full rounded-xl border border-[#dcd6cb] bg-white px-4 py-3 pr-11 text-[15px] text-slate-800 placeholder:text-[#78716c] focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-sky-400"
                 />
+                {isExtracting && (
+                  <div
+                    className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1c3060] dark:text-sky-400"
+                    title="নিউজ আনা হচ্ছে..."
+                  >
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  </div>
+                )}
               </div>
-            </div>
+            </section>
 
-            <button
-              type="button"
-              onClick={handleDownloadCard}
-              className="mt-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1c3060] px-5 py-3.5 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-[#15254b] active:scale-[0.995] whitespace-nowrap dark:bg-[#254689] dark:hover:bg-[#2d54a4]"
-            >
-              {downloadDone ? (
-                <>
-                  <Check className="h-4 w-4 stroke-[2.5]" />
-                  <span>ডাউনলোড সম্পন্ন হয়েছে</span>
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4 stroke-[2.5]" />
-                  <span>কার্ড ডাউনলোড করুন</span>
-                </>
-              )}
-            </button>
+            {/* 2-Column Workspace */}
+            <main className="grid grid-cols-1 items-start gap-5 md:grid-cols-[420px_1fr] lg:grid-cols-[460px_1fr]">
+              {/* LEFT COLUMN: Sticky Live Card Preview + Quick Actions */}
+              <div className="w-full space-y-2.5 md:sticky md:top-4">
+                <div className="rounded-2xl border border-[#ebe5da] bg-white p-2.5 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
+                  <div className="overflow-hidden rounded-xl">
+                    <canvas
+                      ref={previewCanvasRef}
+                      width={selectedTemplate.canvasWidth}
+                      height={selectedTemplate.canvasHeight}
+                      onMouseDown={(e) => startCanvasDrag(e.clientX, e.clientY)}
+                      onMouseMove={(e) => moveCanvasDrag(e.clientX, e.clientY)}
+                      onMouseUp={endCanvasDrag}
+                      onMouseLeave={endCanvasDrag}
+                      onTouchStart={(e) => {
+                        if (e.touches.length === 1) {
+                          startCanvasDrag(e.touches[0].clientX, e.touches[0].clientY);
+                        }
+                      }}
+                      onTouchMove={(e) => {
+                        if (e.touches.length === 1 && dragRef.current.mode !== 'none') {
+                          e.preventDefault();
+                          moveCanvasDrag(e.touches[0].clientX, e.touches[0].clientY);
+                        }
+                      }}
+                      onTouchEnd={endCanvasDrag}
+                      className="block h-auto w-full cursor-grab select-none touch-none active:cursor-grabbing"
+                    />
+                  </div>
 
-            <div className="mt-2.5 grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => handleSelectTemplate(PSD_GREEN_TEMPLATE)}
-                className={`cursor-pointer rounded-xl py-2.5 px-4 text-[14px] font-bold transition-colors whitespace-nowrap shrink-0 ${
-                  selectedTemplate.id === PSD_GREEN_TEMPLATE.id
-                    ? 'bg-[#1c3060] text-white shadow-sm dark:bg-[#254689]'
-                    : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1c3060] hover:bg-[#eae2d5] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                সবুজ টেমপ্লেট
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectTemplate(PSD_MAROON_TEMPLATE)}
-                className={`cursor-pointer rounded-xl py-2.5 px-4 text-[14px] font-bold transition-colors whitespace-nowrap shrink-0 ${
-                  selectedTemplate.id === PSD_MAROON_TEMPLATE.id
-                    ? 'bg-[#1c3060] text-white shadow-sm dark:bg-[#254689]'
-                    : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1c3060] hover:bg-[#eae2d5] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                মেরুন টেমপ্লেট
-              </button>
-            </div>
+                  {/* Active Template Metadata + Quick Export Format */}
+                  <div className="mt-2.5 flex items-center justify-between gap-2 px-1 text-xs">
+                    <p className="min-w-0 truncate text-[#57534e] dark:text-slate-300">
+                      <span className="font-bold text-[#1c3060] dark:text-sky-300">
+                        {effectiveTemplate.name}
+                      </span>
+                      <span className="mx-1.5 text-slate-400">·</span>
+                      <span>
+                        {categoryNames[effectiveTemplate.category] || effectiveTemplate.category}
+                      </span>
+                    </p>
+                    <div className="inline-flex shrink-0 items-center gap-1">
+                      {(['png', 'jpeg'] as const).map((fmt) => (
+                        <button
+                          key={fmt}
+                          type="button"
+                          onClick={() => setExportFormat(fmt)}
+                          className={`cursor-pointer rounded px-2 py-0.5 text-[11px] font-bold uppercase transition-colors ${
+                            exportFormat === fmt
+                              ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                              : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1e293b] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          {fmt === 'png' ? 'PNG' : 'JPG'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
 
-            <input
-              ref={customFrameInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
-              className="hidden"
-              onChange={handleCustomFrameUpload}
-            />
-            <button
-              type="button"
-              onClick={() => customFrameInputRef.current?.click()}
-              className="mt-2.5 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[#b0a99f] bg-[#fbf8f3] px-3.5 py-2.5 text-[13.5px] font-bold text-[#1c3060] transition-colors hover:border-[#1c3060] hover:bg-[#f4eee4] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300 dark:hover:border-sky-400"
-            >
-              <Upload className="h-4 w-4 stroke-[2.2]" />
-              <span>📸 আসল ফটো কার্ড PNG আপলোড করুন</span>
-            </button>
-
-            {selectedTemplate.id.startsWith('custom-') && (
-              <div className="mt-2 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
-                <span className="truncate font-medium">✨ আসল ফ্রেম সক্রিয়: {selectedTemplate.name}</span>
+                {/* Primary Download Button */}
                 <button
                   type="button"
-                  onClick={() => handleSelectTemplate(PSD_GREEN_TEMPLATE)}
-                  className="ml-2 underline font-semibold text-emerald-900 hover:text-emerald-700 dark:text-emerald-300"
+                  onClick={handleDownloadCard}
+                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1c3060] px-5 py-3 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-[#15254b] active:scale-[0.995] whitespace-nowrap dark:bg-[#254689] dark:hover:bg-[#2d54a4]"
                 >
-                  ডিফল্ট
+                  {downloadDone ? (
+                    <>
+                      <Check className="h-4 w-4 stroke-[2.5]" />
+                      <span>ডাউনলোড সম্পন্ন হয়েছে</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 stroke-[2.5]" />
+                      <span>কার্ড ডাউনলোড করুন</span>
+                    </>
+                  )}
                 </button>
+
+                {/* Quick Template Switcher */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTemplate(PSD_GREEN_TEMPLATE)}
+                    className={`cursor-pointer rounded-xl py-2 px-3 text-[13.5px] font-bold transition-colors whitespace-nowrap shrink-0 truncate ${
+                      selectedTemplate.id === PSD_GREEN_TEMPLATE.id
+                        ? 'bg-[#1c3060] text-white shadow-sm dark:bg-[#254689]'
+                        : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1c3060] hover:bg-[#eae2d5] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {templateOverrides[PSD_GREEN_TEMPLATE.id]?.name?.trim() || PSD_GREEN_TEMPLATE.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTemplate(PSD_MAROON_TEMPLATE)}
+                    className={`cursor-pointer rounded-xl py-2 px-3 text-[13.5px] font-bold transition-colors whitespace-nowrap shrink-0 truncate ${
+                      selectedTemplate.id === PSD_MAROON_TEMPLATE.id
+                        ? 'bg-[#1c3060] text-white shadow-sm dark:bg-[#254689]'
+                        : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1c3060] hover:bg-[#eae2d5] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {templateOverrides[PSD_MAROON_TEMPLATE.id]?.name?.trim() || PSD_MAROON_TEMPLATE.name}
+                  </button>
+                </div>
+
+                {/* Quick Photo & Custom PNG Frame Upload */}
+                <input
+                  ref={customFrameInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={handleCustomFrameUpload}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#c9c5c0] bg-white px-3 py-2 text-[13px] font-bold text-[#1c3060] transition-colors hover:bg-[#f4eee4] whitespace-nowrap dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                  >
+                    <ImagePlus className="h-4 w-4 shrink-0" />
+                    <span>নিজের ছবি দিন</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => customFrameInputRef.current?.click()}
+                    className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#b0a99f] bg-[#fbf8f3] px-3 py-2 text-[13px] font-bold text-[#1c3060] transition-colors hover:border-[#1c3060] hover:bg-[#f4eee4] whitespace-nowrap dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300 dark:hover:border-sky-400"
+                  >
+                    <Upload className="h-4 w-4 shrink-0" />
+                    <span>আসল ফ্রেম PNG</span>
+                  </button>
+                </div>
+
+                {/* Browse Dedicated 98+ Templates Page CTA */}
+                <button
+                  type="button"
+                  onClick={() => navigateToPage('templates')}
+                  className="flex w-full cursor-pointer items-center justify-between rounded-xl border border-[#d6cfc2] bg-white px-4 py-2.5 text-[13.5px] font-bold text-[#1c3060] shadow-xs transition-colors hover:border-[#1c3060] hover:bg-[#faf6ef] dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 dark:hover:border-sky-400"
+                >
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    <LayoutGrid className="h-4 w-4 text-[#faab3f]" />
+                    <span>সব {ALL_TEMPLATES.length}+ টেমপ্লেট ও ক্যাটাগরি দেখুন</span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                </button>
+
+                {selectedTemplate.id.startsWith('custom-') && (
+                  <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+                    <span className="truncate font-medium">আসল ফ্রেম সক্রিয়: {effectiveTemplate.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectTemplate(PSD_GREEN_TEMPLATE)}
+                      className="ml-2 underline font-semibold text-emerald-900 hover:text-emerald-700 dark:text-emerald-300"
+                    >
+                      ডিফল্ট
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
           {/* RIGHT COLUMN: Headline Card (with Interactive Word-by-Word Click Highlight) */}
           <div className="w-full space-y-3">
@@ -1324,11 +1911,7 @@ export default function App() {
                         );
                       })}
                     </div>
-                  ) : (
-                    <p className="py-2 text-center text-xs text-slate-500 dark:text-slate-400">
-                      উপরে শিরোনাম লিখলে শব্দগুলো আলাদা বাটন আকারে এখানে আসবে।
-                    </p>
-                  )}
+                  ) : null}
 
                   {/* Word highlight action toolbar */}
                   <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#ebd8c5] dark:border-slate-800">
@@ -1392,14 +1975,143 @@ export default function App() {
                 </div>
               )}
 
-              {selectionHint ? (
+              {selectionHint && (
                 <p className="mt-2 text-xs font-medium text-[#b45309] dark:text-amber-300">
                   {selectionHint}
                 </p>
-              ) : (
-                <p className="mt-2 text-[12px] text-[#6b655e] dark:text-slate-400">
-                  কার্ডের লেখা আঙুল/মাউস দিয়ে টেনে সরাতে পারবেন — মাঝখানে এলে নিজে আটকে যাবে।
-                </p>
+              )}
+            </section>
+
+            {/* Card & Category Name Customizer */}
+            <section className="rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRenamePanel((v) => !v)}
+                  aria-expanded={showRenamePanel}
+                  className="flex flex-1 cursor-pointer items-center justify-between gap-2 text-left"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[14px] font-bold text-[#1c3060] dark:text-slate-100">
+                      <Tag className="h-4 w-4 shrink-0 text-[#faab3f]" />
+                      <span>ক্যাটাগরি ও ফটো কার্ডের নাম পরিবর্তন</span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-[#6b655e] dark:text-slate-400">
+                      কার্ড: {effectiveTemplate.name} · ক্যাটাগরি: {categoryNames[effectiveTemplate.category] || effectiveTemplate.category}
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-[#c9c5c0] bg-[#f4eee4] px-2.5 py-1 text-xs font-bold text-[#1c3060] whitespace-nowrap shrink-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">
+                    <Pencil className="h-3 w-3" />
+                    <span>{showRenamePanel ? 'বন্ধ করুন' : 'নাম বদলান'}</span>
+                  </span>
+                </button>
+              </div>
+
+              {showRenamePanel && (
+                <div className="mt-3.5 space-y-3 border-t border-[#ebe5da] pt-3.5 dark:border-slate-700">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                        ফটো কার্ডের নাম
+                      </label>
+                      <input
+                        type="text"
+                        value={
+                          templateOverrides[selectedTemplate.id]?.name !== undefined
+                            ? templateOverrides[selectedTemplate.id]?.name
+                            : selectedTemplate.name
+                        }
+                        onChange={(e) => handleUpdateActiveTemplateOverride({ name: e.target.value })}
+                        placeholder="যেমন: প্রবাসে সিলেট কার্ড"
+                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                        কার্ডের ক্যাটাগরি নির্বাচন
+                      </label>
+                      <select
+                        value={effectiveTemplate.category}
+                        onChange={(e) =>
+                          handleUpdateActiveTemplateOverride({
+                            category: e.target.value as Exclude<TemplateCategory, 'সব'>,
+                          })
+                        }
+                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      >
+                        {TEMPLATE_CATEGORIES.filter(
+                          (c): c is Exclude<TemplateCategory, 'সব'> => c !== 'সব'
+                        ).map((cat) => (
+                          <option key={cat} value={cat}>
+                            {categoryNames[cat] || cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                        ক্যাটাগরির নাম পরিবর্তন ({effectiveTemplate.category})
+                      </label>
+                      <input
+                        type="text"
+                        value={categoryNames[effectiveTemplate.category] ?? effectiveTemplate.category}
+                        onChange={(e) => handleRenameCategory(effectiveTemplate.category, e.target.value)}
+                        placeholder="ক্যাটাগরির নতুন নাম"
+                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                        কার্ডে দেখানো ক্যাটাগরি ব্যাজ
+                      </label>
+                      <input
+                        type="text"
+                        value={effectiveTemplate.kickerText ?? ''}
+                        onChange={(e) =>
+                          handleUpdateActiveTemplateOverride({ kickerText: e.target.value })
+                        }
+                        placeholder="যেমন: ব্রেকিং নিউজ / বিশেষ প্রতিবেদন"
+                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+                  </div>
+
+                  {selectedTemplate.styleType !== 'psd-overlay' && (
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                        নিচের ফুটার লেখা (CTA)
+                      </label>
+                      <input
+                        type="text"
+                        value={effectiveTemplate.footerCtaText ?? 'বিস্তারিত কমেন্টে'}
+                        onChange={(e) =>
+                          handleUpdateActiveTemplateOverride({ footerCtaText: e.target.value })
+                        }
+                        placeholder="বিস্তারিত কমেন্টে"
+                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleResetActiveTemplateOverride();
+                        handleResetCategoryName(effectiveTemplate.category);
+                      }}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[#c9c5c0] bg-[#f4eee4] px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-[#ebe3d6] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>আগের নামে ফিরুন</span>
+                    </button>
+                  </div>
+                </div>
               )}
             </section>
 
@@ -1738,12 +2450,21 @@ export default function App() {
                   </button>
                 </section>
 
-                {/* Panel 3: Logo & Export Format */}
-                <section className="space-y-3.5 rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
+                {/* Panel 3: Unified Brand Logo & Dark-Background Adjustment & Export Format */}
+                <section className="space-y-4 rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[13.5px] font-semibold text-[#57534e] dark:text-slate-300">
-                      নিজের লোগো ও ডাউনলোড ফরম্যাট (ঐচ্ছিক)
-                    </span>
+                    <div>
+                      <span className="block text-[13.5px] font-semibold text-[#1c3060] dark:text-slate-100">
+                        সকল কার্ডে ব্র্যান্ড লোগো ও ডাউনলোড
+                      </span>
+                      <p className="text-[11.5px] text-[#6b655e] dark:text-slate-400">
+                        {logoSettings.dataUrl
+                          ? 'কাস্টম লোগো সব কার্ডে সক্রিয় আছে'
+                          : logoSettings.hideDefaultBrand
+                            ? 'ডিফল্ট লোগো সাময়িকভাবে লুকানো আছে'
+                            : 'অফিসিয়াল শ্যামল সিলেট লোগো সব কার্ডে সক্রিয় আছে'}
+                      </p>
+                    </div>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1751,7 +2472,7 @@ export default function App() {
                         className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#c9c5c0] bg-[#f4eee4] px-3 py-1.5 text-xs font-bold text-[#1e293b] hover:bg-[#ebe3d6] whitespace-nowrap shrink-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                       >
                         <Plus className="h-3.5 w-3.5" />
-                        <span>লোগো আপলোড</span>
+                        <span>{logoSettings.dataUrl ? 'লোগো বদলান' : 'কাস্টম লোগো দিন'}</span>
                       </button>
                       {logoSettings.dataUrl && (
                         <button
@@ -1765,18 +2486,77 @@ export default function App() {
                           className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 whitespace-nowrap shrink-0 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          <span>লোগো মুছুন</span>
+                          <span>অফিসিয়াল লোগোতে ফিরুন</span>
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {logoSettings.dataUrl && (
+                  {/* Dark Background Badge Adjustment */}
+                  <div>
+                    <p className="mb-2 text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                      লোগো ব্যাকগ্রাউন্ড (গাঢ় কার্ডে দৃশ্যমানতা)
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                      {(
+                        [
+                          { id: 'auto', label: 'অটো ব্যাজ' },
+                          { id: 'white', label: 'সাদা ব্যাজ' },
+                          { id: 'frosted', label: 'হালকা গ্লাস' },
+                          { id: 'none', label: 'ব্যাজ ছাড়া' },
+                        ] as const
+                      ).map((opt) => {
+                        const active = (logoSettings.badgeStyle ?? 'auto') === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() =>
+                              setLogoSettings((prev) => ({ ...prev, badgeStyle: opt.id }))
+                            }
+                            className={`cursor-pointer rounded-lg px-2.5 py-2 text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                              active
+                                ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                                : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1e293b] hover:bg-[#ebe3d6] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Size & Position Controls (active whenever official or custom logo is shown) */}
+                  {(logoSettings.dataUrl || !logoSettings.hideDefaultBrand) && (
                     <div className="space-y-3 pt-1">
                       <div>
-                        <p className="mb-1.5 text-xs font-semibold text-[#57534e] tabular-nums dark:text-slate-300">
-                          লোগোর আকার ({logoSettings.scale}%)
-                        </p>
+                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-[#57534e] tabular-nums dark:text-slate-300">
+                            লোগোর আকার ({logoSettings.scale}%)
+                          </p>
+                          {(logoSettings.scale !== 100 ||
+                            logoSettings.x !== 0 ||
+                            logoSettings.y !== 0 ||
+                            (logoSettings.badgeStyle ?? 'auto') !== 'auto') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLogoSettings((prev) => ({
+                                  ...prev,
+                                  scale: 100,
+                                  x: 0,
+                                  y: 0,
+                                  badgeStyle: 'auto',
+                                }))
+                              }
+                              className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-semibold text-[#1c3060] hover:underline dark:text-sky-300"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              <span>ডিফল্ট পজিশন</span>
+                            </button>
+                          )}
+                        </div>
                         <RangeSlider
                           min={25}
                           max={200}
@@ -1815,7 +2595,7 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#ebe5da] pt-2.5 dark:border-slate-700/70">
                     <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-[#1e293b] dark:text-slate-200">
                       <input
                         type="checkbox"
@@ -1825,7 +2605,7 @@ export default function App() {
                         }
                         className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-[#1c3060]"
                       />
-                      <span>ডিফল্ট ব্র্যান্ডিং লুকান</span>
+                      <span>ডিফল্ট লোগো ও ব্র্যান্ডিং লুকান</span>
                     </label>
 
                     <div className="inline-flex items-center gap-1.5">
@@ -1849,40 +2629,22 @@ export default function App() {
                     </div>
                   </div>
                 </section>
-
-                {/* Panel 4: 50+ Free Templates Gallery */}
-                <section className="rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-[13.5px] font-semibold text-[#1c3060] dark:text-slate-100">
-                        ৫০+ ফ্রি প্রফেশনাল টেমপ্লেট
-                      </p>
-                      <p className="text-xs text-[#6b655e] dark:text-slate-400">
-                        সব টেমপ্লেট সম্পূর্ণ ফ্রি — প্রিভিউ দেখে যেকোনোটি বেছে নিন
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowExtraTemplates((v) => !v)}
-                      className="cursor-pointer rounded-lg border border-[#c9c5c0] bg-[#f4eee4] px-3 py-1.5 text-xs font-bold text-[#1c3060] hover:bg-[#ebe3d6] whitespace-nowrap shrink-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-                    >
-                      {showExtraTemplates ? 'তালিকা লুকান' : 'সব টেমপ্লেট দেখুন'}
-                    </button>
-                  </div>
-
-                  {showExtraTemplates && (
-                    <div className="mt-3.5 border-t border-[#ebe5da] pt-3.5 dark:border-slate-700">
-                      <TemplateGallery
-                        selectedTemplateId={selectedTemplate.id}
-                        onSelectTemplate={handleSelectTemplate}
-                      />
-                    </div>
-                  )}
-                </section>
               </div>
             )}
+
+            {/* Mobile quick scroll back to preview */}
+            <button
+              type="button"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#c9c5c0] bg-[#f4eee4] px-4 py-2.5 text-xs font-bold text-[#1c3060] md:hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
+              <span>উপরে প্রিভিউ ও ডাউনলোডে যান</span>
+            </button>
           </div>
         </main>
+          </>
+        )}
       </div>
     </div>
   );

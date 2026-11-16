@@ -18,12 +18,27 @@ export interface FontOption {
   dataUrl?: string;
 }
 
+export type LogoBadgeStyle = 'auto' | 'white' | 'frosted' | 'none';
+
 export interface LogoSettings {
   dataUrl: string | null;
   scale: number; // 20..200 (%)
   x: number; // -100..100 (%)
   y: number; // -100..100 (%)
   hideDefaultBrand: boolean;
+  badgeStyle?: LogoBadgeStyle;
+}
+
+export interface BrandLogoSlot {
+  x: number;
+  y: number;
+  maxWidth: number;
+  maxHeight: number;
+  align: 'left' | 'center' | 'right';
+  surfaceIsDark: boolean;
+  pillRadius?: number;
+  padX?: number;
+  padY?: number;
 }
 
 export type ProceduralStyleType =
@@ -35,7 +50,15 @@ export type ProceduralStyleType =
   | 'editorial-broadsheet'
   | 'quote-spotlight'
   | 'split-header-badge'
-  | 'modern-inset-card';
+  | 'modern-inset-card'
+  | 'diagonal-ribbon'
+  | 'video-play-frame'
+  | 'islamic-arch'
+  | 'magazine-split'
+  | 'minimal-polaroid'
+  | 'interview-spotlight'
+  | 'job-career-card'
+  | 'cyber-tech-grid';
 
 export type TemplateCategory =
   | 'সব'
@@ -46,7 +69,21 @@ export type TemplateCategory =
   | 'খেলাধুলা'
   | 'অর্থনীতি'
   | 'প্রযুক্তি'
-  | 'মতামত ও উক্তি';
+  | 'মতামত ও উক্তি'
+  | 'নাগরিক সংবাদ'
+  | 'প্রবাসে সিলেট'
+  | 'চাকরির খোঁজে'
+  | 'সারা বাংলা'
+  | 'শিক্ষাঙ্গন'
+  | 'খবর'
+  | 'নিউজফ্ল্যাশ'
+  | 'জীবনযাপন'
+  | 'ইসলাম'
+  | 'অর্থ-বাণিজ্য'
+  | 'শিল্প-সাহিত্য'
+  | 'গনমাধ্যম'
+  | 'মুখোমুখি'
+  | 'ভিডিও';
 
 export interface RectBox {
   x: number;
@@ -89,6 +126,13 @@ export interface TemplateConfig {
     badgeText: string;
     borderColor: string;
   };
+  kickerText?: string;
+  footerCtaText?: string;
+}
+
+export interface TemplateOverride {
+  name?: string;
+  category?: Exclude<TemplateCategory, 'সব'>;
   kickerText?: string;
   footerCtaText?: string;
 }

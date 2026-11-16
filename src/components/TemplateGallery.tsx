@@ -1,32 +1,77 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Check } from 'lucide-react';
+import { Search, Check, Pencil, RotateCcw } from 'lucide-react';
 import { ALL_TEMPLATES, TEMPLATE_CATEGORIES } from '../data/templates';
-import type { TemplateCategory, TemplateConfig } from '../types/card';
+import type { TemplateCategory, TemplateConfig, TemplateOverride } from '../types/card';
 
 interface TemplateGalleryProps {
   selectedTemplateId: string;
   onSelectTemplate: (template: TemplateConfig) => void;
+  categoryNames: Record<string, string>;
+  onRenameCategory: (categoryKey: Exclude<TemplateCategory, 'সব'>, newName: string) => void;
+  onResetCategoryName: (categoryKey: Exclude<TemplateCategory, 'সব'>) => void;
+  templateOverrides: Record<string, TemplateOverride>;
 }
 
 export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
   selectedTemplateId,
   onSelectTemplate,
+  categoryNames,
+  onRenameCategory,
+  onResetCategoryName,
+  templateOverrides,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<TemplateCategory>('সব');
+  const [editingCategoryKey, setEditingCategoryKey] = useState<Exclude<TemplateCategory, 'সব'> | null>(null);
+  const [categoryDraft, setCategoryDraft] = useState('');
+
+  const getCategoryDisplayName = (cat: TemplateCategory): string => {
+    if (cat === 'সব') return 'সব';
+    return categoryNames[cat]?.trim() || cat;
+  };
+
+  const resolvedTemplates = useMemo(() => {
+    return ALL_TEMPLATES.map((tpl) => {
+      const ov = templateOverrides[tpl.id];
+      if (!ov) return tpl;
+      return {
+        ...tpl,
+        name: ov.name !== undefined && ov.name.trim() ? ov.name : tpl.name,
+        category: ov.category || tpl.category,
+        kickerText: ov.kickerText !== undefined ? ov.kickerText : tpl.kickerText,
+        footerCtaText: ov.footerCtaText !== undefined ? ov.footerCtaText : tpl.footerCtaText,
+      };
+    });
+  }, [templateOverrides]);
 
   const filteredTemplates = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return ALL_TEMPLATES.filter((t) => {
+    return resolvedTemplates.filter((t) => {
       const catMatch = activeCategory === 'সব' || t.category === activeCategory;
+      const catDisplay = getCategoryDisplayName(t.category).toLowerCase();
       const queryMatch =
         !q ||
         t.name.toLowerCase().includes(q) ||
         t.category.toLowerCase().includes(q) ||
+        catDisplay.includes(q) ||
         (t.kickerText && t.kickerText.toLowerCase().includes(q));
       return catMatch && queryMatch;
     });
-  }, [searchQuery, activeCategory]);
+  }, [resolvedTemplates, searchQuery, activeCategory, categoryNames]);
+
+  const startEditingCategory = (catKey: Exclude<TemplateCategory, 'সব'>) => {
+    setEditingCategoryKey(catKey);
+    setCategoryDraft(getCategoryDisplayName(catKey));
+  };
+
+  const commitCategoryRename = () => {
+    if (!editingCategoryKey) return;
+    const trimmed = categoryDraft.trim();
+    if (trimmed) {
+      onRenameCategory(editingCategoryKey, trimmed);
+    }
+    setEditingCategoryKey(null);
+  };
 
   return (
     <div className="space-y-3">
@@ -37,7 +82,7 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="টেমপ্লেট খুঁজুন (যেমন: ব্রেকিং, খেলাধুলা, জাতীয়, উক্তি)..."
+          placeholder="টেমপ্লেট বা ক্যাটাগরি খুঁজুন (যেমন: প্রবাসে সিলেট, চাকরির খোঁজে, ইসলাম, ভিডিও)..."
           className="w-full rounded-lg border border-[#d6cfc2] bg-white py-2 pl-9 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
         />
       </div>
@@ -46,25 +91,104 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
       <div className="flex flex-wrap gap-1.5">
         {TEMPLATE_CATEGORIES.map((cat) => {
           const isActive = activeCategory === cat;
+          const displayLabel = getCategoryDisplayName(cat);
+          const count =
+            cat === 'সব'
+              ? resolvedTemplates.length
+              : resolvedTemplates.filter((t) => t.category === cat).length;
+
           return (
             <button
               key={cat}
               type="button"
               onClick={() => setActiveCategory(cat)}
-              className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 isActive
                   ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
                   : 'border border-[#c9c5c0] bg-[#f4eee4] text-slate-800 hover:bg-[#ebe3d5] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              {cat}
+              <span>{displayLabel}</span>
+              <span
+                className={`text-[10px] tabular-nums ${
+                  isActive ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                ({count})
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* Scrollable 54-Template Visual Grid */}
-      <div className="grid max-h-[340px] grid-cols-2 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-3">
+      {/* Active Category Inline Rename Bar */}
+      {activeCategory !== 'সব' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e3dbcd] bg-[#faf6ef] px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900/70">
+          {editingCategoryKey === activeCategory ? (
+            <div className="flex w-full items-center gap-2">
+              <input
+                type="text"
+                value={categoryDraft}
+                onChange={(e) => setCategoryDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitCategoryRename();
+                  if (e.key === 'Escape') setEditingCategoryKey(null);
+                }}
+                autoFocus
+                placeholder="ক্যাটাগরির নতুন নাম লিখুন"
+                className="min-w-0 flex-1 rounded-md border border-[#1c3060] bg-white px-2.5 py-1 text-xs font-medium text-slate-900 focus:outline-none dark:border-sky-400 dark:bg-slate-800 dark:text-slate-100"
+              />
+              <button
+                type="button"
+                onClick={commitCategoryRename}
+                className="cursor-pointer rounded-md bg-[#1c3060] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#15254b] dark:bg-[#254689]"
+              >
+                সেভ
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingCategoryKey(null)}
+                className="cursor-pointer rounded-md border border-[#c9c5c0] bg-white px-2 py-1 text-xs font-semibold text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+              >
+                বাতিল
+              </button>
+            </div>
+          ) : (
+            <>
+              <span className="text-[#57534e] dark:text-slate-300">
+                ক্যাটাগরি:{' '}
+                <strong className="text-[#1c3060] dark:text-sky-300">
+                  {getCategoryDisplayName(activeCategory)}
+                </strong>
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => startEditingCategory(activeCategory)}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[#c9c5c0] bg-white px-2 py-1 text-[11px] font-semibold text-[#1c3060] hover:bg-[#f4eee4] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300"
+                >
+                  <Pencil className="h-3 w-3" />
+                  <span>ক্যাটাগরির নাম পরিবর্তন</span>
+                </button>
+                {categoryNames[activeCategory] && categoryNames[activeCategory] !== activeCategory && (
+                  <button
+                    type="button"
+                    onClick={() => onResetCategoryName(activeCategory)}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[#c9c5c0] bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-[#f4eee4] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    title="আগের নামে ফিরে যান"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    <span>আগের নাম</span>
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Scrollable Template Visual Grid */}
+      <div className="grid max-h-[380px] grid-cols-2 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-3">
         {filteredTemplates.map((tpl) => {
           const isSelected = tpl.id === selectedTemplateId;
           const isGreenPsd = tpl.id === 'psd-green';
@@ -89,7 +213,11 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
             isGreenPsd ||
             tpl.styleType === 'top-band-white-footer' ||
             tpl.styleType === 'editorial-broadsheet' ||
-            tpl.styleType === 'split-header-badge';
+            tpl.styleType === 'split-header-badge' ||
+            tpl.styleType === 'magazine-split';
+
+          const isVideoStyle = tpl.styleType === 'video-play-frame';
+          const isArchStyle = tpl.styleType === 'islamic-arch';
 
           return (
             <button
@@ -143,9 +271,23 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
                       style={{ backgroundColor: accent }}
                     />
                     <div
-                      className="mx-1 my-1.5 flex-1 rounded-sm border bg-slate-300/80"
-                      style={{ borderColor: '#ffffff' }}
-                    />
+                      className={`relative mx-1 my-1.5 flex-1 border bg-slate-300/80 ${
+                        isArchStyle ? 'rounded-t-2xl' : 'rounded-sm'
+                      }`}
+                      style={{ borderColor: isArchStyle ? accent : '#ffffff' }}
+                    >
+                      {isVideoStyle && (
+                        <span
+                          className="absolute left-1/2 top-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-[9px] text-white"
+                          style={{
+                            backgroundColor: 'rgba(15, 23, 42, 0.78)',
+                            borderColor: accent,
+                          }}
+                        >
+                          ▶
+                        </span>
+                      )}
+                    </div>
                     <div className="space-y-1 rounded-sm bg-black/25 px-1.5 py-1">
                       <div
                         className="mx-auto h-1.5 w-4/5 rounded-sm"
@@ -165,7 +307,7 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({
                   {tpl.name}
                 </p>
                 <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-                  {tpl.category} · ফ্রি
+                  {getCategoryDisplayName(tpl.category)} · ফ্রি
                 </p>
               </div>
             </button>

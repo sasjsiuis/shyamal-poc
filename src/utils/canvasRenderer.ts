@@ -518,8 +518,9 @@ function renderProceduralTemplateChrome(
   ctx.fillRect(0, 0, W, H);
 
   const dateStr = getBengaliDateString();
-  const kicker = template.kickerText?.trim() || '';
-  const ctaText = template.footerCtaText?.trim() || 'বিস্তারিত কমেন্টে';
+  const kicker = template.kickerText !== undefined ? template.kickerText.trim() : '';
+  const ctaText =
+    template.footerCtaText !== undefined ? template.footerCtaText.trim() : 'বিস্তারিত কমেন্টে';
 
   if (template.styleType === 'top-band-white-footer') {
     ctx.fillStyle = pal.footerBg;
@@ -530,28 +531,30 @@ function renderProceduralTemplateChrome(
     ctx.lineWidth = 4;
     ctx.strokeRect(pBox.x, pBox.y, pBox.width, pBox.height);
 
-    const pillW = 340;
-    const pillH = 64;
-    const pillX = (W - pillW) / 2;
-    const pillY = pBox.y + pBox.height + 36;
-    ctx.fillStyle = pal.accent;
-    drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 32);
-    ctx.fill();
+    if (ctaText) {
+      const pillW = 340;
+      const pillH = 64;
+      const pillX = (W - pillW) / 2;
+      const pillY = pBox.y + pBox.height + 36;
+      ctx.fillStyle = pal.accent;
+      drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 32);
+      ctx.fill();
 
-    for (const dir of [-1, 1]) {
-      for (let d = 1; d <= 3; d++) {
-        ctx.beginPath();
-        ctx.arc(W / 2 + dir * (pillW / 2 + 18 + d * 22), pillY + pillH / 2, 7 + (3 - d), 0, Math.PI * 2);
-        ctx.fillStyle = pal.accent;
-        ctx.fill();
+      for (const dir of [-1, 1]) {
+        for (let d = 1; d <= 3; d++) {
+          ctx.beginPath();
+          ctx.arc(W / 2 + dir * (pillW / 2 + 18 + d * 22), pillY + pillH / 2, 7 + (3 - d), 0, Math.PI * 2);
+          ctx.fillStyle = pal.accent;
+          ctx.fill();
+        }
       }
-    }
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `700 32px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ctaText, W / 2, pillY + pillH / 2 + 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 32px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, pillY + pillH / 2 + 2);
+    }
 
     ctx.fillStyle = pal.footerText;
     ctx.font = `600 25px 'Hind Siliguri', sans-serif`;
@@ -600,13 +603,15 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = 'rgba(0, 0, 0, 0.26)';
     ctx.fillRect(pBox.x - 8, pBox.y + pBox.height + 12, pBox.width + 16, 336);
 
-    ctx.fillStyle = pal.bgPrimary;
-    ctx.fillRect(W / 2 - 180, H - 68, 360, 52);
-    ctx.fillStyle = pal.accent;
-    ctx.font = `700 30px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ctaText, W / 2, H - 42);
+    if (ctaText) {
+      ctx.fillStyle = pal.bgPrimary;
+      ctx.fillRect(W / 2 - 180, H - 68, 360, 52);
+      ctx.fillStyle = pal.accent;
+      ctx.font = `700 30px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 42);
+    }
 
     return {
       x: W / 2 - 165,
@@ -635,15 +640,20 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 90, W, 90);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 30px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      hideDefaultBrand ? ctaText : `${dateStr}  •  ${ctaText}`,
-      W / 2,
-      H - 44
-    );
+    const footerLine = ctaText
+      ? hideDefaultBrand
+        ? ctaText
+        : `${dateStr}  •  ${ctaText}`
+      : hideDefaultBrand
+        ? ''
+        : dateStr;
+    if (footerLine) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 30px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(footerLine, W / 2, H - 44);
+    }
 
     return {
       x: 846,
@@ -660,8 +670,8 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(0, 0, W, 92);
 
-    if (!hideDefaultBrand) {
-      drawDynamicBadge(ctx, kicker || 'ব্রেকিং নিউজ', 52, 20, 52, pal.badgeBg, pal.badgeText, 6, 'left', 27);
+    if (!hideDefaultBrand && kicker) {
+      drawDynamicBadge(ctx, kicker, 52, 20, 52, pal.badgeBg, pal.badgeText, 6, 'left', 27);
     }
 
     drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
@@ -671,15 +681,20 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 78, W, 78);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      hideDefaultBrand ? ctaText : `${dateStr}  •  ${ctaText}`,
-      W / 2,
-      H - 38
-    );
+    const footerLine = ctaText
+      ? hideDefaultBrand
+        ? ctaText
+        : `${dateStr}  •  ${ctaText}`
+      : hideDefaultBrand
+        ? ''
+        : dateStr;
+    if (footerLine) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(footerLine, W / 2, H - 38);
+    }
 
     return {
       x: 856,
@@ -701,11 +716,13 @@ function renderProceduralTemplateChrome(
     ctx.fillRect(64, 58, W - 128, 6);
 
     if (!hideDefaultBrand) {
-      ctx.fillStyle = pal.accent;
-      ctx.font = `700 26px 'Hind Siliguri', sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(kicker || 'প্রধান সংবাদ', 64, 88);
+      if (kicker) {
+        ctx.fillStyle = pal.accent;
+        ctx.font = `700 26px 'Hind Siliguri', sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(kicker, 64, 88);
+      }
 
       ctx.fillStyle = template.defaultTextColor || '#334155';
       ctx.globalAlpha = 0.75;
@@ -722,11 +739,13 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(64, H - 134, W - 128, 82);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ctaText, 96, H - 93);
+    if (ctaText) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 93);
+    }
 
     return {
       x: 826,
@@ -765,14 +784,19 @@ function renderProceduralTemplateChrome(
     ctx.textBaseline = 'middle';
     ctx.fillText('“', W / 2, pBox.y + pBox.height + 10);
 
-    ctx.fillStyle = pal.accent;
-    ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText(
-      !hideDefaultBrand ? `${kicker || 'উক্তি'}  •  ${ctaText}` : ctaText,
-      W / 2,
-      H - 68
-    );
+    const quoteMeta =
+      !hideDefaultBrand && kicker && ctaText
+        ? `${kicker}  •  ${ctaText}`
+        : !hideDefaultBrand && kicker
+          ? kicker
+          : ctaText;
+    if (quoteMeta) {
+      ctx.fillStyle = pal.accent;
+      ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(quoteMeta, W / 2, H - 68);
+    }
 
     return {
       x: W / 2 - 165,
@@ -800,15 +824,22 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 108, W, 108);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      hideDefaultBrand ? ctaText : `${dateStr}  |  ${ctaText}`,
-      54,
-      H - 54
-    );
+    if (!hideDefaultBrand) {
+      ctx.fillStyle = pal.footerText;
+      ctx.globalAlpha = 0.78;
+      ctx.font = `600 22px 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(dateStr, 54, H - 54);
+      ctx.globalAlpha = 1;
+    }
+    if (ctaText) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 54);
+    }
 
     return {
       x: 844,
@@ -847,15 +878,20 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 84, W, 84);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      hideDefaultBrand ? ctaText : `${dateStr}  •  ${ctaText}`,
-      W / 2,
-      H - 42
-    );
+    const footerLine = ctaText
+      ? hideDefaultBrand
+        ? ctaText
+        : `${dateStr}  •  ${ctaText}`
+      : hideDefaultBrand
+        ? ''
+        : dateStr;
+    if (footerLine) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(footerLine, W / 2, H - 42);
+    }
 
     return {
       x: 848,
@@ -909,15 +945,20 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 84, W, 84);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      hideDefaultBrand ? ctaText : `${dateStr}  •  ${ctaText}`,
-      W / 2,
-      H - 42
-    );
+    const footerLine = ctaText
+      ? hideDefaultBrand
+        ? ctaText
+        : `${dateStr}  •  ${ctaText}`
+      : hideDefaultBrand
+        ? ''
+        : dateStr;
+    if (footerLine) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(footerLine, W / 2, H - 42);
+    }
 
     return {
       x: 852,
@@ -989,19 +1030,23 @@ function renderProceduralTemplateChrome(
     ctx.stroke();
     ctx.restore();
 
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ctaText, 76, H - 88);
+    if (ctaText) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 88);
 
-    const ctaW = ctx.measureText(ctaText).width;
-    ctx.strokeStyle = pal.accent;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(76 + ctaW + 24, H - 88);
-    ctx.lineTo(790, H - 88);
-    ctx.stroke();
+      const ctaW = ctx.measureText(ctaText).width;
+      ctx.strokeStyle = pal.accent;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(76, H - 88);
+      ctx.lineTo(Math.max(76, W / 2 - ctaW / 2 - 20), H - 88);
+      ctx.moveTo(Math.min(790, W / 2 + ctaW / 2 + 20), H - 88);
+      ctx.lineTo(790, H - 88);
+      ctx.stroke();
+    }
 
     return {
       x: 828,
@@ -1018,8 +1063,10 @@ function renderProceduralTemplateChrome(
     ctx.fillStyle = pal.accent;
     ctx.fillRect(0, 0, 22, H);
 
-    if (!hideDefaultBrand && kicker) {
-      drawDynamicBadge(ctx, kicker, 64, 34, 48, pal.badgeBg, pal.badgeText, 8, 'left', 25);
+    if (!hideDefaultBrand) {
+      if (kicker) {
+        drawDynamicBadge(ctx, kicker, 64, 34, 48, pal.badgeBg, pal.badgeText, 8, 'left', 25);
+      }
       ctx.fillStyle = template.defaultTextColor || '#ffffff';
       ctx.globalAlpha = 0.72;
       ctx.font = `500 23px 'Hind Siliguri', sans-serif`;
@@ -1036,11 +1083,13 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(22, H - 90, W - 22, 90);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ctaText, 64, H - 44);
+    if (ctaText) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 44);
+    }
 
     return {
       x: 844,
@@ -1082,14 +1131,16 @@ function renderProceduralTemplateChrome(
       drawDynamicBadge(ctx, kicker, pBox.x + 22, pBox.y - 24, 48, pal.badgeBg, pal.badgeText, 24, 'left', 25);
     }
 
-    ctx.fillStyle = pal.footerBg;
-    drawRoundedRect(ctx, 72, H - 108, 340, 50, 25);
-    ctx.fill();
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ctaText, 72 + 170, H - 83);
+    if (ctaText) {
+      ctx.fillStyle = pal.footerBg;
+      drawRoundedRect(ctx, W / 2 - 165, H - 108, 330, 50, 25);
+      ctx.fill();
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 83);
+    }
 
     return {
       x: 822,
@@ -1121,15 +1172,22 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(32, H - 112, W - 64, 80);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      hideDefaultBrand ? ctaText : `${dateStr}  •  ${ctaText}`,
-      64,
-      H - 72
-    );
+    if (!hideDefaultBrand) {
+      ctx.fillStyle = pal.footerText;
+      ctx.globalAlpha = 0.78;
+      ctx.font = `600 21px 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(dateStr, 64, H - 72);
+      ctx.globalAlpha = 1;
+    }
+    if (ctaText) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 72);
+    }
 
     return {
       x: 846,
@@ -1159,14 +1217,16 @@ function renderProceduralTemplateChrome(
     drawRoundedRect(ctx, 56, pBox.y + pBox.height + 16, W - 112, 290, 16);
     ctx.fill();
 
-    ctx.fillStyle = pal.footerBg;
-    drawRoundedRect(ctx, 56, H - 94, 360, 52, 26);
-    ctx.fill();
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 27px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ctaText, 56 + 180, H - 68);
+    if (ctaText) {
+      ctx.fillStyle = pal.footerBg;
+      drawRoundedRect(ctx, W / 2 - 170, H - 94, 340, 52, 26);
+      ctx.fill();
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 27px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 68);
+    }
 
     if (!hideDefaultBrand) {
       ctx.fillStyle = template.defaultTextColor || '#ffffff';
@@ -1231,15 +1291,20 @@ function renderProceduralTemplateChrome(
 
     ctx.fillStyle = pal.footerBg;
     ctx.fillRect(0, H - 84, W, 84);
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      hideDefaultBrand ? ctaText : `${dateStr}  •  ${ctaText}`,
-      W / 2,
-      H - 42
-    );
+    const footerLine = ctaText
+      ? hideDefaultBrand
+        ? ctaText
+        : `${dateStr}  •  ${ctaText}`
+      : hideDefaultBrand
+        ? ''
+        : dateStr;
+    if (footerLine) {
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(footerLine, W / 2, H - 42);
+    }
 
     return {
       x: 850,
@@ -1268,14 +1333,16 @@ function renderProceduralTemplateChrome(
       drawDynamicBadge(ctx, kicker, pBox.x + 24, pBox.y + 24, 50, pal.badgeBg, pal.badgeText, 8, 'left', 26);
     }
 
-    ctx.fillStyle = pal.footerBg;
-    drawRoundedRect(ctx, 60, H - 110, 340, 56, 28);
-    ctx.fill();
-    ctx.fillStyle = pal.footerText;
-    ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ctaText, 60 + 170, H - 82);
+    if (ctaText) {
+      ctx.fillStyle = pal.footerBg;
+      drawRoundedRect(ctx, W / 2 - 165, H - 110, 330, 56, 28);
+      ctx.fill();
+      ctx.fillStyle = pal.footerText;
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, H - 82);
+    }
 
     return {
       x: 832,
@@ -1366,7 +1433,7 @@ function drawUnifiedBrandLogo(
   const lx = logoCenterX - drawW / 2;
   const ly = logoCenterY - drawH / 2;
 
-  const badgeMode: LogoBadgeStyle = logoSettings.badgeStyle ?? 'auto';
+  const badgeMode: LogoBadgeStyle = logoSettings.badgeStyle ?? 'none';
   const showBadge =
     badgeMode === 'white' ||
     badgeMode === 'frosted' ||
@@ -1383,21 +1450,29 @@ function drawUnifiedBrandLogo(
   if (showBadge) {
     const radius = slot.pillRadius ?? Math.round(bh / 2);
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.22)';
+    ctx.shadowColor =
+      badgeMode === 'frosted'
+        ? 'rgba(15, 23, 42, 0.16)'
+        : 'rgba(0, 0, 0, 0.22)';
     ctx.shadowBlur = Math.max(8, Math.round(bh * 0.18));
     ctx.shadowOffsetY = Math.max(2, Math.round(bh * 0.04));
-    ctx.fillStyle =
-      badgeMode === 'frosted'
-        ? 'rgba(255, 255, 255, 0.86)'
-        : 'rgba(255, 255, 255, 0.97)';
+    if (badgeMode === 'frosted') {
+      ctx.fillStyle = slot.surfaceIsDark
+        ? 'rgba(255, 255, 255, 0.34)'
+        : 'rgba(241, 245, 249, 0.72)';
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.97)';
+    }
     drawRoundedRect(ctx, bx, by, bw, bh, radius);
     ctx.fill();
     ctx.restore();
 
     ctx.strokeStyle =
       badgeMode === 'frosted'
-        ? 'rgba(255, 255, 255, 0.96)'
-        : 'rgba(15, 23, 42, 0.09)';
+        ? slot.surfaceIsDark
+          ? 'rgba(255, 255, 255, 0.65)'
+          : 'rgba(148, 163, 184, 0.42)'
+        : 'rgba(15, 23, 42, 0.12)';
     ctx.lineWidth = Math.max(1.5, Math.round(bh * 0.025));
     drawRoundedRect(ctx, bx, by, bw, bh, radius);
     ctx.stroke();
@@ -1496,7 +1571,7 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     ctx.lineWidth = template.id === 'psd-green' ? 4 : 3;
     ctx.strokeRect(template.photoBox.x, template.photoBox.y, template.photoBox.width, template.photoBox.height);
 
-    const badgeMode: LogoBadgeStyle = logoSettings.badgeStyle ?? 'auto';
+    const badgeMode: LogoBadgeStyle = logoSettings.badgeStyle ?? 'none';
     const hasCustomLogo = Boolean(logoSettings.dataUrl && logoImg && logoImg.naturalWidth > 0);
     const hasLogoTransform =
       logoSettings.scale !== 100 ||

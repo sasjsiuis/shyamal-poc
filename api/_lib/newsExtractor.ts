@@ -269,7 +269,7 @@ export function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta 
 
   title = cleanHeadline(rawTitleCandidate, siteName);
 
-  if (/^(just a moment|attention required|access denied|403 forbidden|cloudflare|security check)/i.test(title)) {
+  if (/^(just a moment|attention required|access denied|403 forbidden|cloudflare|security check|page not found|404)/i.test(title)) {
     title = '';
   }
 
@@ -319,7 +319,7 @@ export function parseHtmlMetadata(html: string, pageUrl: string): ExtractedMeta 
   return { title, image, siteName };
 }
 
-export async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs = 3800): Promise<ExtractedMeta> {
+export async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs = 6200): Promise<ExtractedMeta> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -345,7 +345,9 @@ export async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs 
 
     const chunks: Uint8Array[] = [];
     let total = 0;
-    const maxBytes = 2_500_000;
+    const maxBytes = 1_500_000;
+    const decoder = new TextDecoder('utf-8', { fatal: false });
+    let partialHtml = '';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -353,8 +355,15 @@ export async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs 
       if (value) {
         chunks.push(value);
         total += value.byteLength;
-        if (total >= maxBytes) {
-          await reader.cancel();
+        partialHtml += decoder.decode(value, { stream: true });
+        if (
+          (total > 32_000 &&
+            partialHtml.includes('</head>') &&
+            /og:title/i.test(partialHtml) &&
+            /og:image/i.test(partialHtml)) ||
+          total >= maxBytes
+        ) {
+          await reader.cancel().catch(() => {});
           break;
         }
       }
@@ -376,7 +385,7 @@ export async function fetchHtmlWithUA(url: string, userAgent: string, timeoutMs 
   }
 }
 
-export async function fetchViaMicrolink(url: string, timeoutMs = 4200): Promise<ExtractedMeta> {
+export async function fetchViaMicrolink(url: string, timeoutMs = 4500): Promise<ExtractedMeta> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -405,6 +414,25 @@ export async function fetchViaMicrolink(url: string, timeoutMs = 4200): Promise<
       };
     }
     return { title: '', image: '', siteName: '' };
+  } catch {
+    return { title: '', image: '', siteName: '' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchViaAllOrigins(url: string, timeoutMs = 4800): Promise<ExtractedMeta> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const apiUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    const resp = await fetch(apiUrl, {
+      signal: controller.signal,
+      headers: { Accept: 'text/html,application/xhtml+xml,*/*' },
+    });
+    if (!resp.ok) return { title: '', image: '', siteName: '' };
+    const html = (await resp.text()).slice(0, 1_000_000);
+    return parseHtmlMetadata(html, url);
   } catch {
     return { title: '', image: '', siteName: '' };
   } finally {
@@ -481,24 +509,32 @@ export async function extractNewsFromTargetUrl(rawUrl: string): Promise<ExtractN
 
   const href = safeUrl.href;
 
-  const [socialResult, browserResult] = await Promise.all([
-    fetchHtmlWithUA(href, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', 3600),
+  const [socialResult, whatsappResult, browserResult] = await Promise.all([
+    fetchHtmlWithUA(href, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', 6000),
+    fetchHtmlWithUA(href, 'WhatsApp/2.23.20.0 A', 6000),
     fetchHtmlWithUA(
       href,
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      3600
+      6000
     ),
   ]);
 
-  let title = socialResult.title || browserResult.title;
-  let image = socialResult.image || browserResult.image || extractYouTubeThumbnail(safeUrl);
-  let siteName = socialResult.siteName || browserResult.siteName;
+  let title = socialResult.title || whatsappResult.title || browserResult.title;
+  let image =
+    socialResult.image ||
+    whatsappResult.image ||
+    browserResult.image ||
+    extractYouTubeThumbnail(safeUrl);
+  let siteName = socialResult.siteName || whatsappResult.siteName || browserResult.siteName;
 
   if (!title || !image) {
-    const ml = await fetchViaMicrolink(href, 4200);
-    if (!title && ml.title) title = ml.title;
-    if (!image && ml.image) image = ml.image;
-    if (!siteName && ml.siteName) siteName = ml.siteName;
+    const [ml, ao] = await Promise.all([
+      fetchViaMicrolink(href, 4200),
+      fetchViaAllOrigins(href, 4500),
+    ]);
+    if (!title) title = ml.title || ao.title;
+    if (!image) image = ml.image || ao.image;
+    if (!siteName) siteName = ml.siteName || ao.siteName;
   }
 
   if (!title) {
@@ -542,9 +578,9 @@ export async function fetchProxiedImageBuffer(rawImgUrl: string, rawRef = ''): P
 
   const referer = /^https?:\/\//i.test(rawRef.trim()) ? rawRef.trim() : `${safeImgUrl.protocol}//${safeImgUrl.hostname}/`;
 
-  const tryDownloadImage = async (ua: string, includeReferer: boolean): Promise<ProxiedImageResult | null> => {
+  const tryDownloadImage = async (targetHref: string, ua: string, includeReferer: boolean): Promise<ProxiedImageResult | null> => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
+    const timer = setTimeout(() => controller.abort(), 6500);
     try {
       const headers: Record<string, string> = {
         'User-Agent': ua,
@@ -553,14 +589,14 @@ export async function fetchProxiedImageBuffer(rawImgUrl: string, rawRef = ''): P
       if (includeReferer) {
         headers.Referer = referer;
       }
-      const resp = await fetch(safeImgUrl.href, {
+      const resp = await fetch(targetHref, {
         signal: controller.signal,
         redirect: 'follow',
         headers,
       });
       if (!resp.ok) return null;
 
-      if (resp.url && resp.url !== safeImgUrl.href) {
+      if (resp.url && resp.url !== targetHref) {
         await validateSafeExternalUrl(resp.url);
       }
 
@@ -604,12 +640,25 @@ export async function fetchProxiedImageBuffer(rawImgUrl: string, rawRef = ''): P
   };
 
   let imgData = await tryDownloadImage(
+    safeImgUrl.href,
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     true
   );
 
   if (!imgData) {
-    imgData = await tryDownloadImage('facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', false);
+    imgData = await tryDownloadImage(
+      safeImgUrl.href,
+      'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+      false
+    );
+  }
+
+  if (!imgData) {
+    imgData = await tryDownloadImage(
+      `https://wsrv.nl/?url=${encodeURIComponent(safeImgUrl.href)}&output=jpg`,
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      false
+    );
   }
 
   return imgData;

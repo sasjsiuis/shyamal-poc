@@ -54,7 +54,7 @@ const TEMPLATE_OVERRIDES_STORAGE_KEY = 'news_card_template_overrides_v1';
 const CARD_AUTOSAVE_STORAGE_KEY = 'news_card_autosave_v1';
 
 interface SavedCardState {
-  version: 1;
+  version: 1 | 2;
   newsUrl: string;
   selectedTemplateId: string;
   customTemplate?: TemplateConfig | null;
@@ -89,7 +89,9 @@ function loadSavedCardState(): SavedCardState | null {
     const raw = localStorage.getItem(CARD_AUTOSAVE_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SavedCardState> | null;
-    if (!parsed || typeof parsed !== 'object' || parsed.version !== 1) return null;
+    if (!parsed || typeof parsed !== 'object' || (parsed.version !== 1 && parsed.version !== 2)) {
+      return null;
+    }
 
     const highlights: HighlightRange[] = Array.isArray(parsed.highlights)
       ? parsed.highlights.filter(
@@ -105,9 +107,10 @@ function loadSavedCardState(): SavedCardState | null {
     const logoRaw = parsed.logoSettings;
     const rawBadge = logoRaw?.badgeStyle;
     const validBadgeStyle: LogoBadgeStyle =
-      rawBadge === 'auto' || rawBadge === 'white' || rawBadge === 'frosted' || rawBadge === 'none'
+      parsed.version === 2 &&
+      (rawBadge === 'auto' || rawBadge === 'white' || rawBadge === 'frosted' || rawBadge === 'none')
         ? rawBadge
-        : 'auto';
+        : 'none';
     const logoSettings: LogoSettings = {
       dataUrl: typeof logoRaw?.dataUrl === 'string' ? logoRaw.dataUrl : null,
       scale: clampNumber(logoRaw?.scale, 25, 200, 100),
@@ -303,6 +306,119 @@ async function fetchMicrolinkClient(
       title,
       image: rawImg.trim(),
     };
+  } catch {
+    return { title: '', image: '' };
+  }
+}
+
+function parseClientHtmlMeta(html: string, pageUrl: string): { title: string; image: string } {
+  if (!html || typeof DOMParser === 'undefined') return { title: '', image: '' };
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const pickMeta = (selectors: string[]): string => {
+      for (const sel of selectors) {
+        const el = doc.querySelector(sel);
+        const val = el?.getAttribute('content')?.trim();
+        if (val) return val;
+      }
+      return '';
+    };
+
+    const siteName = pickMeta([
+      'meta[property="og:site_name"]',
+      'meta[name="application-name"]',
+      'meta[name="publisher"]',
+    ]);
+    let rawTitle =
+      pickMeta([
+        'meta[property="og:title"]',
+        'meta[name="twitter:title"]',
+        'meta[name="title"]',
+      ]) ||
+      doc.querySelector('h1')?.textContent?.trim() ||
+      doc.title?.trim() ||
+      '';
+
+    if (/^(just a moment|attention required|access denied|403 forbidden|cloudflare|page not found|404)/i.test(rawTitle)) {
+      rawTitle = '';
+    }
+
+    if (rawTitle) {
+      for (const sep of [' | ', ' - ', ' – ', ' — ', ' :: ']) {
+        const idx = rawTitle.lastIndexOf(sep);
+        if (idx > 14) {
+          const right = rawTitle.slice(idx + sep.length).trim();
+          if (
+            right.split(/\s+/).length <= 4 ||
+            (siteName && right.toLowerCase().includes(siteName.toLowerCase()))
+          ) {
+            rawTitle = rawTitle.slice(0, idx).trim();
+            break;
+          }
+        }
+      }
+    }
+
+    const rawImg =
+      pickMeta([
+        'meta[property="og:image:secure_url"]',
+        'meta[property="og:image"]',
+        'meta[property="og:image:url"]',
+        'meta[name="twitter:image"]',
+        'meta[name="twitter:image:src"]',
+      ]) ||
+      doc.querySelector('link[rel="image_src"]')?.getAttribute('href')?.trim() ||
+      '';
+
+    let image = '';
+    if (rawImg) {
+      try {
+        image = new URL(rawImg, pageUrl).href;
+      } catch {
+        image = '';
+      }
+    }
+    return { title: rawTitle, image };
+  } catch {
+    return { title: '', image: '' };
+  }
+}
+
+async function fetchAllOriginsClient(
+  rawUrl: string,
+  signal: AbortSignal
+): Promise<{ title: string; image: string }> {
+  try {
+    const target = normalizeExternalUrl(rawUrl);
+    if (!target) return { title: '', image: '' };
+    const resp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(target)}`, {
+      signal,
+    });
+    if (!resp.ok) return { title: '', image: '' };
+    const json = (await resp.json()) as { contents?: string };
+    if (!json?.contents) return { title: '', image: '' };
+    return parseClientHtmlMeta(json.contents, target);
+  } catch {
+    return { title: '', image: '' };
+  }
+}
+
+async function fetchJsonLinkClient(
+  rawUrl: string,
+  signal: AbortSignal
+): Promise<{ title: string; image: string }> {
+  try {
+    const target = normalizeExternalUrl(rawUrl);
+    if (!target) return { title: '', image: '' };
+    const resp = await fetch(`https://jsonlink.io/api/extract?url=${encodeURIComponent(target)}`, {
+      signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (!resp.ok) return { title: '', image: '' };
+    const json = (await resp.json()) as { title?: string; images?: string[] };
+    const title = (json.title || '').trim();
+    const image = Array.isArray(json.images) && json.images[0] ? json.images[0].trim() : '';
+    return { title, image };
   } catch {
     return { title: '', image: '' };
   }
@@ -520,7 +636,7 @@ export default function App() {
         x: 0,
         y: 0,
         hideDefaultBrand: false,
-        badgeStyle: 'auto',
+        badgeStyle: 'none',
       }
   );
   const [logoImg, setLogoImg] = useState<HTMLImageElement | null>(null);
@@ -995,9 +1111,13 @@ export default function App() {
       if (controller.signal.aborted) return;
 
       if (!title || !image) {
-        const ml = await fetchMicrolinkClient(trimmed, controller.signal);
-        if (!title && ml.title) title = ml.title;
-        if (!image && ml.image) image = ml.image;
+        const [ml, ao, jl] = await Promise.all([
+          fetchMicrolinkClient(trimmed, controller.signal),
+          fetchAllOriginsClient(trimmed, controller.signal),
+          fetchJsonLinkClient(trimmed, controller.signal),
+        ]);
+        if (!title) title = ml.title || ao.title || jl.title;
+        if (!image) image = ml.image || ao.image || jl.image;
       }
 
       if (!image) {
@@ -1068,7 +1188,7 @@ export default function App() {
   // Auto-save card state to localStorage (debounced + synchronous flush on pagehide/beforeunload)
   const latestCardSnapshot = useMemo<SavedCardState>(
     () => ({
-      version: 1,
+      version: 2,
       newsUrl,
       selectedTemplateId: selectedTemplate.id,
       customTemplate: selectedTemplate.id.startsWith('custom-') ? selectedTemplate : null,
@@ -2164,105 +2284,86 @@ export default function App() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 text-[14px] font-bold text-[#1c3060] dark:text-slate-100">
                       <Tag className="h-4 w-4 shrink-0 text-[#faab3f]" />
-                      <span>ক্যাটাগরি ও ফটো কার্ডের নাম পরিবর্তন</span>
+                      <span>কার্ডে দেখানো ক্যাটাগরি ব্যাজ ও ফুটার লেখা</span>
                     </div>
                     <p className="mt-0.5 truncate text-xs text-[#6b655e] dark:text-slate-400">
-                      কার্ড: {effectiveTemplate.name} · ক্যাটাগরি: {categoryNames[effectiveTemplate.category] || effectiveTemplate.category}
+                      ব্যাজ: {effectiveTemplate.kickerText?.trim() || 'নেই'}
+                      {selectedTemplate.styleType !== 'psd-overlay'
+                        ? ` · ফুটার: ${
+                            (effectiveTemplate.footerCtaText !== undefined
+                              ? effectiveTemplate.footerCtaText.trim()
+                              : 'বিস্তারিত কমেন্টে') || 'নেই'
+                          }`
+                        : ''}
                     </p>
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-lg border border-[#c9c5c0] bg-[#f4eee4] px-2.5 py-1 text-xs font-bold text-[#1c3060] whitespace-nowrap shrink-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">
                     <Pencil className="h-3 w-3" />
-                    <span>{showRenamePanel ? 'বন্ধ করুন' : 'নাম বদলান'}</span>
+                    <span>{showRenamePanel ? 'বন্ধ করুন' : 'সম্পাদনা'}</span>
                   </span>
                 </button>
               </div>
 
               {showRenamePanel && (
                 <div className="mt-3.5 space-y-3 border-t border-[#ebe5da] pt-3.5 dark:border-slate-700">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
-                        ফটো কার্ডের নাম
-                      </label>
-                      <input
-                        type="text"
-                        value={
-                          templateOverrides[selectedTemplate.id]?.name !== undefined
-                            ? templateOverrides[selectedTemplate.id]?.name
-                            : selectedTemplate.name
-                        }
-                        onChange={(e) => handleUpdateActiveTemplateOverride({ name: e.target.value })}
-                        placeholder="যেমন: প্রবাসে সিলেট কার্ড"
-                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
-                        কার্ডের ক্যাটাগরি নির্বাচন
-                      </label>
-                      <select
-                        value={effectiveTemplate.category}
-                        onChange={(e) =>
-                          handleUpdateActiveTemplateOverride({
-                            category: e.target.value as Exclude<TemplateCategory, 'সব'>,
-                          })
-                        }
-                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      >
-                        {TEMPLATE_CATEGORIES.filter(
-                          (c): c is Exclude<TemplateCategory, 'সব'> => c !== 'সব'
-                        ).map((cat) => (
-                          <option key={cat} value={cat}>
-                            {categoryNames[cat] || cat}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
-                        ক্যাটাগরির নাম পরিবর্তন ({effectiveTemplate.category})
-                      </label>
-                      <input
-                        type="text"
-                        value={categoryNames[effectiveTemplate.category] ?? effectiveTemplate.category}
-                        onChange={(e) => handleRenameCategory(effectiveTemplate.category, e.target.value)}
-                        placeholder="ক্যাটাগরির নতুন নাম"
-                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                  <div>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <label className="block text-xs font-semibold text-[#57534e] dark:text-slate-300">
                         কার্ডে দেখানো ক্যাটাগরি ব্যাজ
                       </label>
-                      <input
-                        type="text"
-                        value={effectiveTemplate.kickerText ?? ''}
-                        onChange={(e) =>
-                          handleUpdateActiveTemplateOverride({ kickerText: e.target.value })
-                        }
-                        placeholder="যেমন: ব্রেকিং নিউজ / বিশেষ প্রতিবেদন"
-                        className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      />
+                      {Boolean(effectiveTemplate.kickerText?.trim()) && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateActiveTemplateOverride({ kickerText: '' })}
+                          className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline dark:text-red-400"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>মুছুন</span>
+                        </button>
+                      )}
                     </div>
+                    <input
+                      type="text"
+                      value={effectiveTemplate.kickerText ?? ''}
+                      onChange={(e) =>
+                        handleUpdateActiveTemplateOverride({ kickerText: e.target.value })
+                      }
+                      placeholder="খালি রাখলে কার্ডে কোনো ব্যাজ দেখাবে না"
+                      className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    />
                   </div>
 
                   {selectedTemplate.styleType !== 'psd-overlay' && (
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-[#57534e] dark:text-slate-300">
-                        নিচের ফুটার লেখা (CTA)
-                      </label>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label className="block text-xs font-semibold text-[#57534e] dark:text-slate-300">
+                          নিচের ফুটার লেখা (CTA)
+                        </label>
+                        {Boolean(
+                          (effectiveTemplate.footerCtaText !== undefined
+                            ? effectiveTemplate.footerCtaText
+                            : 'বিস্তারিত কমেন্টে'
+                          ).trim()
+                        ) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleUpdateActiveTemplateOverride({ footerCtaText: '' })
+                            }
+                            className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline dark:text-red-400"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span>মুছুন</span>
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={effectiveTemplate.footerCtaText ?? 'বিস্তারিত কমেন্টে'}
                         onChange={(e) =>
                           handleUpdateActiveTemplateOverride({ footerCtaText: e.target.value })
                         }
-                        placeholder="বিস্তারিত কমেন্টে"
+                        placeholder="খালি রাখলে ফুটার লেখা দেখাবে না"
                         className="w-full rounded-lg border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                       />
                     </div>
@@ -2278,7 +2379,7 @@ export default function App() {
                       className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[#c9c5c0] bg-[#f4eee4] px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-[#ebe3d6] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
                     >
                       <RotateCcw className="h-3 w-3" />
-                      <span>আগের নামে ফিরুন</span>
+                      <span>ডিফল্ট লেখায় ফিরুন</span>
                     </button>
                   </div>
                 </div>
@@ -2670,13 +2771,13 @@ export default function App() {
                     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                       {(
                         [
-                          { id: 'auto', label: 'অটো ব্যাজ' },
-                          { id: 'white', label: 'সাদা ব্যাজ' },
-                          { id: 'frosted', label: 'হালকা গ্লাস' },
                           { id: 'none', label: 'ব্যাজ ছাড়া' },
+                          { id: 'frosted', label: 'হালকা গ্লাস' },
+                          { id: 'white', label: 'সাদা ব্যাজ' },
+                          { id: 'auto', label: 'অটো ব্যাজ' },
                         ] as const
                       ).map((opt) => {
-                        const active = (logoSettings.badgeStyle ?? 'auto') === opt.id;
+                        const active = (logoSettings.badgeStyle ?? 'none') === opt.id;
                         return (
                           <button
                             key={opt.id}
@@ -2708,7 +2809,7 @@ export default function App() {
                           {(logoSettings.scale !== 100 ||
                             logoSettings.x !== 0 ||
                             logoSettings.y !== 0 ||
-                            (logoSettings.badgeStyle ?? 'auto') !== 'auto') && (
+                            (logoSettings.badgeStyle ?? 'none') !== 'none') && (
                             <button
                               type="button"
                               onClick={() =>
@@ -2717,7 +2818,7 @@ export default function App() {
                                   scale: 100,
                                   x: 0,
                                   y: 0,
-                                  badgeStyle: 'auto',
+                                  badgeStyle: 'none',
                                 }))
                               }
                               className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-semibold text-[#1c3060] hover:underline dark:text-sky-300"

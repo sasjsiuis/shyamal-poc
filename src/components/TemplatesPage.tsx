@@ -417,13 +417,13 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
               </span>
               {(
                 [
-                  { id: 'auto', label: 'অটো' },
+                  { id: 'none', label: 'ব্যাজ ছাড়া' },
+                  { id: 'frosted', label: 'হালকা গ্লাস' },
                   { id: 'white', label: 'সাদা ব্যাজ' },
-                  { id: 'frosted', label: 'গ্লাস' },
-                  { id: 'none', label: 'ছাড়া' },
+                  { id: 'auto', label: 'অটো ব্যাজ' },
                 ] as const
               ).map((opt) => {
-                const active = (logoSettings.badgeStyle ?? 'auto') === opt.id;
+                const active = (logoSettings.badgeStyle ?? 'none') === opt.id;
                 return (
                   <button
                     key={opt.id}
@@ -756,48 +756,7 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
                     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                       <div>
                         <label className="mb-1 block text-[11.5px] font-semibold text-[#57534e] dark:text-slate-300">
-                          ফটো কার্ডের নাম
-                        </label>
-                        <input
-                          type="text"
-                          value={
-                            templateOverrides[inspectedTemplate.id]?.name !== undefined
-                              ? templateOverrides[inspectedTemplate.id]?.name
-                              : inspectedBaseTemplate.name
-                          }
-                          onChange={(e) =>
-                            onUpdateTemplateOverride(inspectedTemplate.id, { name: e.target.value })
-                          }
-                          className="w-full rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-[11.5px] font-semibold text-[#57534e] dark:text-slate-300">
-                          ক্যাটাগরি নির্বাচন
-                        </label>
-                        <select
-                          value={inspectedTemplate.category}
-                          onChange={(e) =>
-                            onUpdateTemplateOverride(inspectedTemplate.id, {
-                              category: e.target.value as Exclude<TemplateCategory, 'সব'>,
-                            })
-                          }
-                          className="w-full rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        >
-                          {TEMPLATE_CATEGORIES.filter(
-                            (c): c is Exclude<TemplateCategory, 'সব'> => c !== 'সব'
-                          ).map((cat) => (
-                            <option key={cat} value={cat}>
-                              {categoryNames[cat] || cat}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-[11.5px] font-semibold text-[#57534e] dark:text-slate-300">
-                          কার্ডের ব্যাজ লেখা
+                          কার্ডে দেখানো ক্যাটাগরি ব্যাজ
                         </label>
                         <input
                           type="text"
@@ -807,27 +766,29 @@ export const TemplatesPage: React.FC<TemplatesPageProps> = ({
                               kickerText: e.target.value,
                             })
                           }
-                          placeholder="যেমন: প্রবাসে সিলেট"
+                          placeholder="খালি রাখলে ব্যাজ দেখাবে না"
                           className="w-full rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         />
                       </div>
 
-                      <div>
-                        <label className="mb-1 block text-[11.5px] font-semibold text-[#57534e] dark:text-slate-300">
-                          ক্যাটাগরির নাম পরিবর্তন
-                        </label>
-                        <input
-                          type="text"
-                          value={
-                            categoryNames[inspectedTemplate.category] ??
-                            inspectedTemplate.category
-                          }
-                          onChange={(e) =>
-                            onRenameCategory(inspectedTemplate.category, e.target.value)
-                          }
-                          className="w-full rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        />
-                      </div>
+                      {inspectedTemplate.styleType !== 'psd-overlay' && (
+                        <div>
+                          <label className="mb-1 block text-[11.5px] font-semibold text-[#57534e] dark:text-slate-300">
+                            নিচের ফুটার লেখা (CTA)
+                          </label>
+                          <input
+                            type="text"
+                            value={inspectedTemplate.footerCtaText ?? 'বিস্তারিত কমেন্টে'}
+                            onChange={(e) =>
+                              onUpdateTemplateOverride(inspectedTemplate.id, {
+                                footerCtaText: e.target.value,
+                              })
+                            }
+                            placeholder="খালি রাখলে ফুটার লেখা দেখাবে না"
+                            className="w-full rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

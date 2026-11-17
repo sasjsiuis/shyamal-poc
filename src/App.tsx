@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Crop,
   Download,
   Highlighter,
   ImagePlus,
@@ -16,13 +17,14 @@ import {
   Redo2,
   RotateCcw,
   Settings,
-  Sparkles,
   Tag,
   Trash2,
+  Type,
   Undo2,
   Upload,
   X,
 } from 'lucide-react';
+import { LogoEditorModal } from './components/LogoEditorModal';
 import { RangeSlider } from './components/RangeSlider';
 import { TemplatesPage } from './components/TemplatesPage';
 import {
@@ -33,13 +35,16 @@ import {
   TEMPLATE_CATEGORIES,
 } from './data/templates';
 import type {
+  CustomTextItem,
   ExportFormat,
   FontOption,
   HighlightRange,
   LineMode,
   LogoBadgeStyle,
   LogoSettings,
+  LogoShape,
   RenderedLayoutMetrics,
+  SubheadingSettings,
   TemplateCategory,
   TemplateConfig,
   TemplateOverride,
@@ -76,8 +81,18 @@ interface SavedCardState {
   photoPanX: number;
   photoPanY: number;
   logoSettings: LogoSettings;
+  subheading?: SubheadingSettings;
+  customTexts?: CustomTextItem[];
   exportFormat: ExportFormat;
 }
+
+const DEFAULT_SUBHEADING: SubheadingSettings = {
+  text: '',
+  fontSizePercent: 100,
+  color: '',
+  offsetX: 0,
+  offsetY: 0,
+};
 
 function clampNumber(val: unknown, min: number, max: number, fallback: number): number {
   if (typeof val !== 'number' || !Number.isFinite(val)) return fallback;
@@ -112,14 +127,46 @@ function loadSavedCardState(): SavedCardState | null {
       (rawBadge === 'auto' || rawBadge === 'white' || rawBadge === 'frosted' || rawBadge === 'none')
         ? rawBadge
         : 'none';
+    const rawShape = logoRaw?.shape;
+    const validShape: LogoShape =
+      rawShape === 'square' ||
+      rawShape === 'rounded' ||
+      rawShape === 'circle' ||
+      rawShape === 'pill' ||
+      rawShape === 'original'
+        ? rawShape
+        : 'original';
     const logoSettings: LogoSettings = {
       dataUrl: typeof logoRaw?.dataUrl === 'string' ? logoRaw.dataUrl : null,
       scale: clampNumber(logoRaw?.scale, 25, 200, 100),
-      x: clampNumber(logoRaw?.x, -100, 100, 0),
-      y: clampNumber(logoRaw?.y, -100, 100, 0),
+      x: clampNumber(logoRaw?.x, -200, 200, 0),
+      y: clampNumber(logoRaw?.y, -200, 200, 0),
       hideDefaultBrand: Boolean(logoRaw?.hideDefaultBrand),
       badgeStyle: validBadgeStyle,
+      shape: validShape,
     };
+
+    const subRaw = parsed.subheading;
+    const subheading: SubheadingSettings = {
+      text: typeof subRaw?.text === 'string' ? subRaw.text : '',
+      fontSizePercent: clampNumber(subRaw?.fontSizePercent, 60, 180, 100),
+      color: typeof subRaw?.color === 'string' ? subRaw.color : '',
+      offsetX: clampNumber(subRaw?.offsetX, -0.48, 0.48, 0),
+      offsetY: clampNumber(subRaw?.offsetY, -0.48, 0.48, 0),
+    };
+
+    const customTexts: CustomTextItem[] = Array.isArray(parsed.customTexts)
+      ? parsed.customTexts.filter(
+          (c): c is CustomTextItem =>
+            Boolean(c) &&
+            typeof c.id === 'string' &&
+            typeof c.text === 'string' &&
+            typeof c.x === 'number' &&
+            typeof c.y === 'number' &&
+            typeof c.fontSize === 'number' &&
+            typeof c.color === 'string'
+        )
+      : [];
 
     const customTemplate =
       parsed.customTemplate &&
@@ -180,6 +227,8 @@ function loadSavedCardState(): SavedCardState | null {
       photoPanX: clampNumber(parsed.photoPanX, -100, 100, 0),
       photoPanY: clampNumber(parsed.photoPanY, -100, 100, 0),
       logoSettings,
+      subheading,
+      customTexts,
       exportFormat: parsed.exportFormat === 'jpeg' ? 'jpeg' : 'png',
     };
   } catch {
@@ -754,14 +803,38 @@ export default function App() {
         y: 0,
         hideDefaultBrand: false,
         badgeStyle: 'none',
+        shape: 'original',
       }
   );
   const [logoImg, setLogoImg] = useState<HTMLImageElement | null>(null);
   const [officialLogoImg, setOfficialLogoImg] = useState<HTMLImageElement | null>(null);
+  const [logoEditorSource, setLogoEditorSource] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>(
     () => initialSavedCard?.exportFormat ?? 'png'
   );
   const [downloadDone, setDownloadDone] = useState(false);
+
+  // Sub-heading & Free-Floating Custom Text (Pencil Click-to-Place) state
+  const [subheading, setSubheading] = useState<SubheadingSettings>(
+    () => initialSavedCard?.subheading ?? DEFAULT_SUBHEADING
+  );
+  const [showSubheadingPanel, setShowSubheadingPanel] = useState<boolean>(
+    () =>
+      Boolean(initialSavedCard?.subheading?.text.trim()) ||
+      (initialSavedCard?.customTexts?.length ?? 0) > 0
+  );
+  const [customTexts, setCustomTexts] = useState<CustomTextItem[]>(
+    () => initialSavedCard?.customTexts ?? []
+  );
+  const [activeCustomTextId, setActiveCustomTextId] = useState<string | null>(null);
+  const [isPencilTextMode, setIsPencilTextMode] = useState(false);
+  const [pendingPencilPoint, setPendingPencilPoint] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [pendingPencilText, setPendingPencilText] = useState('');
+  const [pendingPencilSize, setPendingPencilSize] = useState(32);
+  const [pendingPencilColor, setPendingPencilColor] = useState('#ffffff');
+  const [pendingPencilBg, setPendingPencilBg] = useState<string | null>('rgba(15, 23, 42, 0.72)');
 
   // File input refs
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -783,7 +856,8 @@ export default function App() {
   });
 
   const dragRef = useRef<{
-    mode: 'none' | 'text' | 'photo' | 'logo';
+    mode: 'none' | 'text' | 'photo' | 'logo' | 'subheading' | 'custom-text';
+    customTextId: string | null;
     startClientX: number;
     startClientY: number;
     initialTextX: number;
@@ -792,9 +866,14 @@ export default function App() {
     initialPanY: number;
     initialLogoX: number;
     initialLogoY: number;
+    initialSubX: number;
+    initialSubY: number;
+    initialCustomX: number;
+    initialCustomY: number;
     moved: boolean;
   }>({
     mode: 'none',
+    customTextId: null,
     startClientX: 0,
     startClientY: 0,
     initialTextX: 0,
@@ -803,6 +882,10 @@ export default function App() {
     initialPanY: 0,
     initialLogoX: 0,
     initialLogoY: 0,
+    initialSubX: 0,
+    initialSubY: 0,
+    initialCustomX: 0.5,
+    initialCustomY: 0.5,
     moved: false,
   });
 
@@ -1206,6 +1289,8 @@ export default function App() {
     photoPanX: number;
     photoPanY: number;
     logoSettings: LogoSettings;
+    subheading: SubheadingSettings;
+    customTexts: CustomTextItem[];
     templateOverrides: Record<string, TemplateOverride>;
   };
 
@@ -1229,6 +1314,8 @@ export default function App() {
       photoPanX,
       photoPanY,
       logoSettings,
+      subheading,
+      customTexts,
       templateOverrides,
     }),
     [
@@ -1250,6 +1337,8 @@ export default function App() {
       photoPanX,
       photoPanY,
       logoSettings,
+      subheading,
+      customTexts,
       templateOverrides,
     ]
   );
@@ -1289,6 +1378,9 @@ export default function App() {
     a.logoSettings.y === b.logoSettings.y &&
     a.logoSettings.hideDefaultBrand === b.logoSettings.hideDefaultBrand &&
     a.logoSettings.badgeStyle === b.logoSettings.badgeStyle &&
+    (a.logoSettings.shape ?? 'original') === (b.logoSettings.shape ?? 'original') &&
+    JSON.stringify(a.subheading) === JSON.stringify(b.subheading) &&
+    JSON.stringify(a.customTexts) === JSON.stringify(b.customTexts) &&
     JSON.stringify(a.highlights) === JSON.stringify(b.highlights) &&
     JSON.stringify(a.templateOverrides) === JSON.stringify(b.templateOverrides);
 
@@ -1315,6 +1407,8 @@ export default function App() {
     setPhotoPanX(snap.photoPanX);
     setPhotoPanY(snap.photoPanY);
     setLogoSettings(snap.logoSettings);
+    setSubheading(snap.subheading);
+    setCustomTexts(snap.customTexts);
     setTemplateOverrides(snap.templateOverrides);
     window.setTimeout(() => {
       isApplyingHistoryRef.current = false;
@@ -1587,6 +1681,11 @@ export default function App() {
     setTextShadow(false);
     setTextColor(selectedTemplate.defaultTextColor);
     setHighlightColor(selectedTemplate.defaultHighlightColor);
+    setSubheading(DEFAULT_SUBHEADING);
+    setCustomTexts([]);
+    setActiveCustomTextId(null);
+    setPendingPencilPoint(null);
+    setIsPencilTextMode(false);
   }, [commitHistoryNow, selectedTemplate]);
 
   // Auto-save card state to localStorage (debounced + synchronous flush on pagehide/beforeunload)
@@ -1613,6 +1712,8 @@ export default function App() {
       photoPanX,
       photoPanY,
       logoSettings,
+      subheading,
+      customTexts,
       exportFormat,
     }),
     [
@@ -1635,6 +1736,8 @@ export default function App() {
       photoPanX,
       photoPanY,
       logoSettings,
+      subheading,
+      customTexts,
       exportFormat,
     ]
   );
@@ -1698,6 +1801,9 @@ export default function App() {
       photoPanX,
       photoPanY,
       logoSettings,
+      subheading,
+      customTexts,
+      activeCustomTextId,
       isExport: false,
       snapState,
     });
@@ -1724,6 +1830,9 @@ export default function App() {
     photoPanX,
     photoPanY,
     logoSettings,
+    subheading,
+    customTexts,
+    activeCustomTextId,
     snapState,
     fontsLoadedTick,
   ]);
@@ -1965,7 +2074,7 @@ export default function App() {
     }
   };
 
-  // Safe Logo Upload Handler
+  // Safe Logo Upload Handler — opens interactive Logo Editor (Crop, Shapes, Sizes, Remove)
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -1976,14 +2085,33 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        commitHistoryNow();
-        setLogoSettings((prev) => ({
-          ...prev,
-          dataUrl: reader.result as string,
-        }));
+        setLogoEditorSource(reader.result);
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  // Add new custom floating text placed via Pencil click or inline creator
+  const handleCommitPencilText = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = pendingPencilText.trim();
+    if (!trimmed || !pendingPencilPoint) return;
+    commitHistoryNow();
+    const id = `txt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const nextItem: CustomTextItem = {
+      id,
+      text: trimmed,
+      x: pendingPencilPoint.x,
+      y: pendingPencilPoint.y,
+      fontSize: pendingPencilSize,
+      color: pendingPencilColor,
+      bgColor: pendingPencilBg,
+    };
+    setCustomTexts((prev) => [...prev, nextItem]);
+    setActiveCustomTextId(id);
+    setShowSubheadingPanel(true);
+    setPendingPencilPoint(null);
+    setPendingPencilText('');
   };
 
   // Canvas Point Calculation
@@ -2009,21 +2137,56 @@ export default function App() {
     if (!metrics) return;
     const pt = getCanvasPoint(clientX, clientY);
 
-    let mode: 'none' | 'text' | 'photo' | 'logo' = 'none';
-    if (metrics.logoHitBox && pointInRect(pt.x, pt.y, metrics.logoHitBox)) {
+    // Pencil click-to-place mode: capture exact click coordinates on card!
+    if (isPencilTextMode) {
+      const nx = Math.max(0.06, Math.min(0.94, pt.x / Math.max(1, metrics.canvasWidth)));
+      const ny = Math.max(0.06, Math.min(0.94, pt.y / Math.max(1, metrics.canvasHeight)));
+      setIsPencilTextMode(false);
+      setPendingPencilPoint({ x: nx, y: ny });
+      setPendingPencilText('');
+      return;
+    }
+
+    let mode: 'none' | 'text' | 'photo' | 'logo' | 'subheading' | 'custom-text' = 'none';
+    let hitCustomId: string | null = null;
+    let hitCustomItem: CustomTextItem | undefined;
+
+    for (let i = metrics.customTextHitBoxes.length - 1; i >= 0; i--) {
+      const entry = metrics.customTextHitBoxes[i];
+      if (pointInRect(pt.x, pt.y, entry.box)) {
+        hitCustomId = entry.id;
+        hitCustomItem = customTexts.find((c) => c.id === entry.id);
+        mode = 'custom-text';
+        break;
+      }
+    }
+
+    if (mode === 'none' && metrics.subheadingHitBox && pointInRect(pt.x, pt.y, metrics.subheadingHitBox)) {
+      mode = 'subheading';
+      setActiveCustomTextId(null);
+    } else if (mode === 'none' && metrics.logoHitBox && pointInRect(pt.x, pt.y, metrics.logoHitBox)) {
       mode = 'logo';
-    } else if (headline.trim() && pointInRect(pt.x, pt.y, metrics.textHitBox)) {
+      setActiveCustomTextId(null);
+    } else if (mode === 'none' && headline.trim() && pointInRect(pt.x, pt.y, metrics.textHitBox)) {
       mode = 'text';
-    } else if (pointInRect(pt.x, pt.y, metrics.photoHitBox)) {
+      setActiveCustomTextId(null);
+    } else if (mode === 'none' && pointInRect(pt.x, pt.y, metrics.photoHitBox)) {
       mode = 'photo';
-    } else if (headline.trim()) {
+      setActiveCustomTextId(null);
+    } else if (mode === 'none' && headline.trim()) {
       mode = 'text';
+      setActiveCustomTextId(null);
+    }
+
+    if (mode === 'custom-text' && hitCustomId) {
+      setActiveCustomTextId(hitCustomId);
     }
 
     if (mode === 'none') return;
 
     dragRef.current = {
       mode,
+      customTextId: hitCustomId,
       startClientX: clientX,
       startClientY: clientY,
       initialTextX: textOffsetX,
@@ -2032,6 +2195,10 @@ export default function App() {
       initialPanY: photoPanY,
       initialLogoX: logoSettings.x,
       initialLogoY: logoSettings.y,
+      initialSubX: subheading.offsetX,
+      initialSubY: subheading.offsetY,
+      initialCustomX: hitCustomItem?.x ?? 0.5,
+      initialCustomY: hitCustomItem?.y ?? 0.5,
       moved: false,
     };
   };
@@ -2064,14 +2231,25 @@ export default function App() {
       setTextOffsetX(nextX);
       setTextOffsetY(nextY);
       setSnapState({ snappedX, snappedY, isDragging: true });
+    } else if (st.mode === 'subheading') {
+      const nextSubX = Math.max(-0.48, Math.min(0.48, st.initialSubX + dxNorm));
+      const nextSubY = Math.max(-0.48, Math.min(0.48, st.initialSubY + dyNorm));
+      setSubheading((prev) => ({ ...prev, offsetX: nextSubX, offsetY: nextSubY }));
+    } else if (st.mode === 'custom-text' && st.customTextId) {
+      const nextX = Math.max(0.03, Math.min(0.97, st.initialCustomX + dxNorm));
+      const nextY = Math.max(0.03, Math.min(0.97, st.initialCustomY + dyNorm));
+      const targetId = st.customTextId;
+      setCustomTexts((prev) =>
+        prev.map((item) => (item.id === targetId ? { ...item, x: nextX, y: nextY } : item))
+      );
     } else if (st.mode === 'photo' && photoImg) {
       const nextPanX = Math.round(Math.max(-100, Math.min(100, st.initialPanX + dxNorm * 220)));
       const nextPanY = Math.round(Math.max(-100, Math.min(100, st.initialPanY + dyNorm * 220)));
       setPhotoPanX(nextPanX);
       setPhotoPanY(nextPanY);
     } else if (st.mode === 'logo') {
-      const nextLogoX = Math.round(Math.max(-100, Math.min(100, st.initialLogoX + dxNorm * 210)));
-      const nextLogoY = Math.round(Math.max(-100, Math.min(100, st.initialLogoY + dyNorm * 210)));
+      const nextLogoX = Math.round(Math.max(-200, Math.min(200, st.initialLogoX + dxNorm * 220)));
+      const nextLogoY = Math.round(Math.max(-200, Math.min(200, st.initialLogoY + dyNorm * 220)));
       setLogoSettings((prev) => ({ ...prev, x: nextLogoX, y: nextLogoY }));
     }
   };
@@ -2119,6 +2297,8 @@ export default function App() {
       photoPanX,
       photoPanY,
       logoSettings,
+      subheading,
+      customTexts,
       isExport: true,
     });
 
@@ -2348,7 +2528,11 @@ export default function App() {
               {/* LEFT COLUMN: Sticky Live Card Preview + Quick Actions */}
               <div className="min-w-0 w-full space-y-2.5 md:sticky md:top-4">
                 <div className="rounded-2xl border border-[#ebe5da] bg-white p-2.5 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
-                  <div className="overflow-hidden rounded-xl">
+                  <div
+                    className={`relative overflow-hidden rounded-xl transition-shadow ${
+                      isPencilTextMode ? 'ring-2 ring-[#faab3f]' : ''
+                    }`}
+                  >
                     <canvas
                       ref={previewCanvasRef}
                       width={selectedTemplate.canvasWidth}
@@ -2369,12 +2553,227 @@ export default function App() {
                         }
                       }}
                       onTouchEnd={endCanvasDrag}
-                      className="block h-auto w-full cursor-grab select-none touch-none active:cursor-grabbing"
+                      className={`block h-auto w-full select-none touch-none ${
+                        isPencilTextMode
+                          ? 'cursor-crosshair'
+                          : 'cursor-grab active:cursor-grabbing'
+                      }`}
                     />
+
+                    {isPencilTextMode && (
+                      <div className="pointer-events-none absolute inset-x-2 top-2 flex items-center justify-center">
+                        <span className="rounded-lg bg-[#1c3060]/90 px-3 py-1.5 text-center text-xs font-bold text-white shadow-md backdrop-blur-xs">
+                          কার্ডের যেকোনো জায়গায় ক্লিক করুন — সেখানেই টেক্সট লিখবেন
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Quick Export Format */}
-                  <div className="mt-2.5 flex items-center justify-end gap-2 px-1 text-xs">
+                  {/* Inline Floating Text Input Creator (triggered by Pencil Click on Canvas!) */}
+                  {pendingPencilPoint && (
+                    <form
+                      onSubmit={handleCommitPencilText}
+                      className="mt-2.5 space-y-2.5 rounded-xl border border-[#faab3f] bg-[#fffaf0] p-3 text-xs shadow-sm dark:border-amber-500/70 dark:bg-slate-900"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 font-bold text-[#1c3060] dark:text-amber-300">
+                          <Pencil className="h-3.5 w-3.5 text-[#faab3f]" />
+                          <span>নির্বাচিত জায়গায় নতুন টেক্সট লিখুন</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPendingPencilPoint(null)}
+                          className="cursor-pointer rounded p-1 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      <input
+                        type="text"
+                        autoFocus
+                        value={pendingPencilText}
+                        onChange={(e) => setPendingPencilText(e.target.value)}
+                        placeholder="যেমন: ফাইল ছবি / বিশেষ প্রতিনিধি / তারিখ..."
+                        className="w-full rounded-lg border border-[#dcd6cb] bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1">
+                          {[
+                            { label: 'ছোট', size: 24 },
+                            { label: 'মাঝারি', size: 34 },
+                            { label: 'বড়', size: 52 },
+                          ].map((preset) => (
+                            <button
+                              key={preset.size}
+                              type="button"
+                              onClick={() => setPendingPencilSize(preset.size)}
+                              className={`cursor-pointer rounded px-2 py-1 text-[11px] font-bold ${
+                                pendingPencilSize === preset.size
+                                  ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                                  : 'border border-[#c9c5c0] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="color"
+                            value={pendingPencilColor}
+                            onChange={(e) => setPendingPencilColor(e.target.value)}
+                            title="টেক্সটের রং"
+                            className="swatch-picker h-6 w-8"
+                          />
+                          {(
+                            [
+                              { label: 'খালি', val: null },
+                              { label: 'কালো', val: 'rgba(15, 23, 42, 0.72)' },
+                              { label: 'হলুদ', val: '#ece304' },
+                            ] as const
+                          ).map((bgOpt) => (
+                            <button
+                              key={bgOpt.label}
+                              type="button"
+                              onClick={() => {
+                                setPendingPencilBg(bgOpt.val);
+                                if (bgOpt.val === '#ece304') setPendingPencilColor('#111827');
+                                else if (bgOpt.val === 'rgba(15, 23, 42, 0.72)')
+                                  setPendingPencilColor('#ffffff');
+                              }}
+                              className={`cursor-pointer rounded px-2 py-1 text-[11px] font-bold ${
+                                pendingPencilBg === bgOpt.val
+                                  ? 'bg-[#faab3f] text-slate-950'
+                                  : 'border border-[#c9c5c0] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                              }`}
+                            >
+                              {bgOpt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPendingPencilPoint(null)}
+                          className="cursor-pointer rounded-lg border border-[#c9c5c0] bg-white px-3 py-1.5 font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                          বাতিল
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={!pendingPencilText.trim()}
+                          className="cursor-pointer rounded-lg bg-[#1c3060] px-3.5 py-1.5 font-bold text-white hover:bg-[#15254b] disabled:opacity-50 dark:bg-[#254689]"
+                        >
+                          স্ক্রিনে বসান
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Quick Edit Bar for Selected Floating Custom Text on Canvas */}
+                  {activeCustomTextId &&
+                    (() => {
+                      const activeItem = customTexts.find((c) => c.id === activeCustomTextId);
+                      if (!activeItem) return null;
+                      return (
+                        <div className="mt-2.5 space-y-2 rounded-xl border border-[#faab3f]/80 bg-[#faf6ef] p-2.5 text-xs dark:border-amber-500/60 dark:bg-slate-900">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={activeItem.text}
+                              onChange={(e) =>
+                                setCustomTexts((prev) =>
+                                  prev.map((c) =>
+                                    c.id === activeItem.id ? { ...c, text: e.target.value } : c
+                                  )
+                                )
+                              }
+                              className="min-w-0 flex-1 rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1 text-xs font-semibold text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                commitHistoryNow();
+                                setCustomTexts((prev) =>
+                                  prev.filter((c) => c.id !== activeItem.id)
+                                );
+                                setActiveCustomTextId(null);
+                              }}
+                              title="এই টেক্সট মুছুন"
+                              className="cursor-pointer rounded-lg border border-red-300 bg-red-50 p-1.5 text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/60 dark:text-red-300"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActiveCustomTextId(null)}
+                              title="সিলেকশন বন্ধ"
+                              className="cursor-pointer rounded-lg border border-[#c9c5c0] bg-white p-1.5 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[11px] font-semibold text-[#57534e] tabular-nums dark:text-slate-300">
+                              সাইজ ({activeItem.fontSize}):
+                            </span>
+                            <div className="min-w-[100px] flex-1">
+                              <RangeSlider
+                                min={16}
+                                max={110}
+                                value={activeItem.fontSize}
+                                onChange={(fontSize) =>
+                                  setCustomTexts((prev) =>
+                                    prev.map((c) =>
+                                      c.id === activeItem.id ? { ...c, fontSize } : c
+                                    )
+                                  )
+                                }
+                                ariaLabel="অতিরিক্ত টেক্সটের সাইজ"
+                              />
+                            </div>
+                            <input
+                              type="color"
+                              value={activeItem.color}
+                              onChange={(e) =>
+                                setCustomTexts((prev) =>
+                                  prev.map((c) =>
+                                    c.id === activeItem.id ? { ...c, color: e.target.value } : c
+                                  )
+                                )
+                              }
+                              className="swatch-picker h-5 w-8"
+                              title="রং পরিবর্তন"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                  {/* Pencil Text Button + Quick Export Format */}
+                  <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 px-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingPencilPoint(null);
+                        setIsPencilTextMode((v) => !v);
+                      }}
+                      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-bold transition-colors ${
+                        isPencilTextMode
+                          ? 'bg-[#faab3f] text-slate-950 shadow-xs'
+                          : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1c3060] hover:bg-[#eae2d5] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100'
+                      }`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      <span>{isPencilTextMode ? 'কার্ডে ক্লিক করুন...' : 'পেন্সিল টেক্সট যোগ'}</span>
+                    </button>
+
                     <div className="inline-flex shrink-0 items-center gap-1">
                       {(['png', 'jpeg'] as const).map((fmt) => (
                         <button
@@ -2563,17 +2962,13 @@ export default function App() {
               {/* OPTION 1: Interactive Word-by-Word Click Highlight UI (Requested by User!) */}
               {highlightTab === 'words' ? (
                 <div className="mt-3 rounded-xl border border-[#ece4d6] bg-[#faf6f0] p-3 dark:border-slate-700/80 dark:bg-slate-900/60">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1c3060] dark:text-sky-300">
-                      <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                      <span>শব্দে ক্লিক করে হাইলাইট করুন:</span>
-                    </span>
-                    {countHighlightedWords > 0 && (
+                  {countHighlightedWords > 0 && (
+                    <div className="mb-2 flex items-center justify-end gap-2">
                       <span className="text-[11px] font-medium text-slate-500 tabular-nums dark:text-slate-400">
                         {countHighlightedWords}টি শব্দ হাইলাইট
                       </span>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {parsedWords.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
@@ -2667,6 +3062,265 @@ export default function App() {
               )}
             </section>
 
+            {/* Sub-heading & Floating Custom Text Panel */}
+            <section className="rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
+              <button
+                type="button"
+                onClick={() => setShowSubheadingPanel((v) => !v)}
+                aria-expanded={showSubheadingPanel}
+                className="flex w-full cursor-pointer items-center justify-between gap-2 text-left"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-[14px] font-bold text-[#1c3060] dark:text-slate-100">
+                    <Type className="h-4 w-4 shrink-0 text-[#faab3f]" />
+                    <span>সাব-হেডিং ও নতুন টেক্সট যোগ</span>
+                  </div>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#c9c5c0] bg-[#f4eee4] px-2.5 py-1 text-xs font-bold text-[#1c3060] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">
+                  <Pencil className="h-3 w-3" />
+                  <span>{showSubheadingPanel ? 'বন্ধ' : 'খুলুন'}</span>
+                </span>
+              </button>
+
+              {showSubheadingPanel && (
+                <div className="mt-3.5 space-y-4 border-t border-[#ebe5da] pt-3.5 dark:border-slate-700">
+                  {/* Subheading Control */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-[#1c3060] dark:text-slate-200">
+                        সাব-হেডিং (শিরোনামের নিচে বা কার্ডে টেনে বসান)
+                      </label>
+                      {subheading.text.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setSubheading(DEFAULT_SUBHEADING)}
+                          className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline dark:text-red-400"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>মুছুন</span>
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={subheading.text}
+                      onChange={(e) =>
+                        setSubheading((prev) => ({ ...prev, text: e.target.value }))
+                      }
+                      placeholder="ছোট সাব-হেডিং লিখুন (যেমন: ঢাকা প্রতিনিধি / বিস্তারিত প্রতিবেদন)..."
+                      className="w-full rounded-xl border border-[#d6cfc2] bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    />
+
+                    {subheading.text.trim() && (
+                      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#ebe5da] bg-[#faf6ef] p-2.5 dark:border-slate-700 dark:bg-slate-900/60">
+                        <div className="min-w-[140px] flex-1">
+                          <p className="mb-1 text-[11.5px] font-semibold text-[#57534e] tabular-nums dark:text-slate-300">
+                            সাব-হেডিং সাইজ ({subheading.fontSizePercent}%)
+                          </p>
+                          <RangeSlider
+                            min={60}
+                            max={180}
+                            value={subheading.fontSizePercent}
+                            onChange={(fontSizePercent) =>
+                              setSubheading((prev) => ({ ...prev, fontSizePercent }))
+                            }
+                            ariaLabel="সাব-হেডিং সাইজ"
+                          />
+                        </div>
+                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-[#1e293b] dark:text-slate-200">
+                          <input
+                            type="color"
+                            value={subheading.color || textColor}
+                            onChange={(e) =>
+                              setSubheading((prev) => ({ ...prev, color: e.target.value }))
+                            }
+                            className="swatch-picker h-6 w-9"
+                          />
+                          <span>রং</span>
+                        </label>
+                        {(Math.abs(subheading.offsetX) > 0.005 ||
+                          Math.abs(subheading.offsetY) > 0.005) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSubheading((prev) => ({ ...prev, offsetX: 0, offsetY: 0 }))
+                            }
+                            className="cursor-pointer rounded-md border border-[#c9c5c0] bg-white px-2.5 py-1 text-[11px] font-bold text-[#1c3060] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300"
+                          >
+                            অবস্থান রিসেট
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Floating Custom Text Layers + Pencil Trigger */}
+                  <div className="space-y-2.5 border-t border-[#ebe5da] pt-3 dark:border-slate-700">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingPencilPoint(null);
+                            setIsPencilTextMode(true);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-[#faab3f] px-3 py-1.5 text-xs font-bold text-slate-950 shadow-xs hover:bg-[#f19c26]"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          <span>পেন্সিল দিয়ে কার্ডে বসান</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            commitHistoryNow();
+                            const id = `txt-${Date.now()}`;
+                            setCustomTexts((prev) => [
+                              ...prev,
+                              {
+                                id,
+                                text: 'নতুন টেক্সট',
+                                x: 0.5,
+                                y: 0.5,
+                                fontSize: 32,
+                                color: '#ffffff',
+                                bgColor: 'rgba(15, 23, 42, 0.72)',
+                              },
+                            ]);
+                            setActiveCustomTextId(id);
+                          }}
+                          className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#c9c5c0] bg-[#f4eee4] px-2.5 py-1.5 text-xs font-bold text-[#1c3060] hover:bg-[#ebe3d6] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>সরাসরি যোগ</span>
+                        </button>
+                    </div>
+
+                    {customTexts.length > 0 && (
+                      <div className="space-y-2">
+                        {customTexts.map((item, idx) => (
+                          <div
+                            key={item.id}
+                            onClick={() => setActiveCustomTextId(item.id)}
+                            className={`space-y-2 rounded-xl border p-2.5 transition-colors ${
+                              activeCustomTextId === item.id
+                                ? 'border-[#faab3f] bg-[#fffaf0] dark:border-amber-500/70 dark:bg-slate-900'
+                                : 'border-[#e6dfd2] bg-[#faf6ef] dark:border-slate-700 dark:bg-slate-900/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-bold text-[#6b655e] tabular-nums dark:text-slate-400">
+                                #{idx + 1}
+                              </span>
+                              <input
+                                type="text"
+                                value={item.text}
+                                onChange={(e) =>
+                                  setCustomTexts((prev) =>
+                                    prev.map((c) =>
+                                      c.id === item.id ? { ...c, text: e.target.value } : c
+                                    )
+                                  )
+                                }
+                                className="min-w-0 flex-1 rounded-lg border border-[#d6cfc2] bg-white px-2.5 py-1 text-xs font-semibold text-slate-900 focus:border-[#1c3060] focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  commitHistoryNow();
+                                  setCustomTexts((prev) => prev.filter((c) => c.id !== item.id));
+                                  if (activeCustomTextId === item.id) setActiveCustomTextId(null);
+                                }}
+                                aria-label="টেক্সট মুছুন"
+                                className="cursor-pointer rounded-md border border-red-300 bg-red-50 p-1.5 text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/60 dark:text-red-300"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <div className="min-w-[110px] flex-1">
+                                <div className="mb-0.5 flex items-center justify-between text-[11px] text-[#57534e] tabular-nums dark:text-slate-400">
+                                  <span>সাইজ ({item.fontSize})</span>
+                                </div>
+                                <RangeSlider
+                                  min={16}
+                                  max={110}
+                                  value={item.fontSize}
+                                  onChange={(fontSize) =>
+                                    setCustomTexts((prev) =>
+                                      prev.map((c) =>
+                                        c.id === item.id ? { ...c, fontSize } : c
+                                      )
+                                    )
+                                  }
+                                  ariaLabel="টেক্সটের সাইজ"
+                                />
+                              </div>
+
+                              <input
+                                type="color"
+                                value={item.color}
+                                onChange={(e) =>
+                                  setCustomTexts((prev) =>
+                                    prev.map((c) =>
+                                      c.id === item.id ? { ...c, color: e.target.value } : c
+                                    )
+                                  )
+                                }
+                                title="টেক্সটের রং"
+                                className="swatch-picker h-6 w-9"
+                              />
+
+                              <div className="flex items-center gap-1">
+                                {(
+                                  [
+                                    { label: 'খালি', val: null },
+                                    { label: 'কালো', val: 'rgba(15, 23, 42, 0.72)' },
+                                    { label: 'হলুদ', val: '#ece304' },
+                                  ] as const
+                                ).map((bg) => (
+                                  <button
+                                    key={bg.label}
+                                    type="button"
+                                    onClick={() =>
+                                      setCustomTexts((prev) =>
+                                        prev.map((c) =>
+                                          c.id === item.id
+                                            ? {
+                                                ...c,
+                                                bgColor: bg.val,
+                                                color:
+                                                  bg.val === '#ece304'
+                                                    ? '#111827'
+                                                    : bg.val
+                                                      ? '#ffffff'
+                                                      : c.color,
+                                              }
+                                            : c
+                                        )
+                                      )
+                                    }
+                                    className={`cursor-pointer rounded px-2 py-0.5 text-[10.5px] font-bold ${
+                                      item.bgColor === bg.val
+                                        ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                                        : 'border border-[#c9c5c0] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                                    }`}
+                                  >
+                                    {bg.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+
             {/* Card & Category Name Customizer */}
             <section className="rounded-2xl border border-[#ebe5da] bg-white p-4 shadow-[0_2px_12px_rgba(28,48,96,0.05)] dark:border-slate-700/80 dark:bg-slate-800/95">
               <div className="flex items-center justify-between gap-2">
@@ -2681,19 +3335,6 @@ export default function App() {
                       <Tag className="h-4 w-4 shrink-0 text-[#faab3f]" />
                       <span>কার্ডে দেখানো ক্যাটাগরি ব্যাজ ও ফুটার লেখা</span>
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-[#6b655e] dark:text-slate-400">
-                      ব্যাজ: {effectiveTemplate.kickerText?.trim() || 'নেই'}
-                      {!['psd-overlay', 'tv-jamuna', 'paper-prothom-alo-2', 'portal-jagonews', 'paper-daily-star', 'portal-bdnews24', 'paper-ittefaq'].includes(selectedTemplate.styleType)
-                        ? ` · ফুটার: ${
-                            (effectiveTemplate.footerCtaText !== undefined
-                              ? effectiveTemplate.footerCtaText.trim()
-                              : 'বিস্তারিত কমেন্টে') || 'নেই'
-                          }`
-                        : ''}
-                      {effectiveTemplate.hasWebsiteUrl
-                        ? ` · ইউআরএল: ${effectiveTemplate.websiteUrl?.trim() || 'নেই'}`
-                        : ''}
-                    </p>
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-lg border border-[#c9c5c0] bg-[#f4eee4] px-2.5 py-1 text-xs font-bold text-[#1c3060] whitespace-nowrap shrink-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">
                     <Pencil className="h-3 w-3" />
@@ -3157,13 +3798,6 @@ export default function App() {
                       <span className="block text-[13.5px] font-semibold text-[#1c3060] dark:text-slate-100">
                         সকল কার্ডে ব্র্যান্ড লোগো ও ডাউনলোড
                       </span>
-                      <p className="text-[11.5px] text-[#6b655e] dark:text-slate-400">
-                        {logoSettings.dataUrl
-                          ? 'কাস্টম লোগো সব কার্ডে সক্রিয় আছে'
-                          : logoSettings.hideDefaultBrand
-                            ? 'ডিফল্ট লোগো রিমুভ করা আছে (লোগো ছাড়া কার্ড)'
-                            : 'অফিসিয়াল শ্যামল সিলেট লোগো সব কার্ডে সক্রিয় আছে'}
-                      </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
@@ -3179,12 +3813,21 @@ export default function App() {
                         <>
                           <button
                             type="button"
+                            onClick={() => setLogoEditorSource(logoSettings.dataUrl)}
+                            className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#1c3060] bg-[#eef3ff] px-2.5 py-1.5 text-xs font-bold text-[#1c3060] hover:bg-[#dfe8ff] whitespace-nowrap shrink-0 dark:border-sky-500 dark:bg-sky-950/60 dark:text-sky-200"
+                          >
+                            <Crop className="h-3.5 w-3.5" />
+                            <span>ক্রপ ও রিমুভ এডিট</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               commitHistoryNow();
                               setLogoSettings((prev) => ({
                                 ...prev,
                                 dataUrl: null,
                                 hideDefaultBrand: false,
+                                shape: 'original',
                               }));
                             }}
                             className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#c9c5c0] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1c3060] hover:bg-[#f4eee4] whitespace-nowrap shrink-0 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-300"
@@ -3242,9 +3885,42 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Dark Background Badge + Size & Position Controls (active whenever official or custom logo is shown) */}
+                  {/* Logo Shapes + Dark Background Badge + Size & Position Controls (active whenever official or custom logo is shown) */}
                   {(logoSettings.dataUrl || !logoSettings.hideDefaultBrand) && (
                     <>
+                      {/* Quick Shape Selector (Circle, Square, Rounded, Pill, Original) */}
+                      <div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(
+                            [
+                              { id: 'original', label: 'আসল' },
+                              { id: 'square', label: 'চার কোণা' },
+                              { id: 'rounded', label: 'রাউন্ডেড' },
+                              { id: 'circle', label: 'গোল' },
+                              { id: 'pill', label: 'পিল' },
+                            ] as const
+                          ).map((shapeOpt) => {
+                            const active = (logoSettings.shape ?? 'original') === shapeOpt.id;
+                            return (
+                              <button
+                                key={shapeOpt.id}
+                                type="button"
+                                onClick={() =>
+                                  setLogoSettings((prev) => ({ ...prev, shape: shapeOpt.id }))
+                                }
+                                className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                                  active
+                                    ? 'bg-[#1c3060] text-white dark:bg-[#254689]'
+                                    : 'border border-[#c9c5c0] bg-[#f4eee4] text-[#1e293b] hover:bg-[#ebe3d6] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600'
+                                }`}
+                              >
+                                {shapeOpt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       <div>
                         <p className="mb-2 text-xs font-semibold text-[#57534e] dark:text-slate-300">
                           লোগো ব্যাকগ্রাউন্ড (গাঢ় কার্ডে দৃশ্যমানতা)
@@ -3288,7 +3964,8 @@ export default function App() {
                             {(logoSettings.scale !== 100 ||
                               logoSettings.x !== 0 ||
                               logoSettings.y !== 0 ||
-                              (logoSettings.badgeStyle ?? 'none') !== 'none') && (
+                              (logoSettings.badgeStyle ?? 'none') !== 'none' ||
+                              (logoSettings.shape ?? 'original') !== 'original') && (
                               <button
                                 type="button"
                                 onClick={() =>
@@ -3298,6 +3975,7 @@ export default function App() {
                                     x: 0,
                                     y: 0,
                                     badgeStyle: 'none',
+                                    shape: 'original',
                                   }))
                                 }
                                 className="inline-flex cursor-pointer items-center gap-1 text-[11.5px] font-semibold text-[#1c3060] hover:underline dark:text-sky-300"
@@ -3322,8 +4000,8 @@ export default function App() {
                               লোগো ডানে-বামে
                             </p>
                             <RangeSlider
-                              min={-100}
-                              max={100}
+                              min={-200}
+                              max={200}
                               value={logoSettings.x}
                               onChange={(x) => setLogoSettings((p) => ({ ...p, x }))}
                               ariaLabel="লোগো ডানে-বামে"
@@ -3334,8 +4012,8 @@ export default function App() {
                               লোগো উপরে-নিচে
                             </p>
                             <RangeSlider
-                              min={-100}
-                              max={100}
+                              min={-200}
+                              max={200}
                               value={logoSettings.y}
                               onChange={(y) => setLogoSettings((p) => ({ ...p, y }))}
                               ariaLabel="লোগো উপরে-নিচে"
@@ -3398,6 +4076,25 @@ export default function App() {
           </>
         )}
       </div>
+
+      <LogoEditorModal
+        isOpen={Boolean(logoEditorSource)}
+        sourceDataUrl={logoEditorSource ?? ''}
+        initialShape={logoSettings.shape ?? 'original'}
+        initialScale={logoSettings.scale}
+        onCancel={() => setLogoEditorSource(null)}
+        onApply={({ dataUrl, shape, scale }) => {
+          commitHistoryNow();
+          setLogoSettings((prev) => ({
+            ...prev,
+            dataUrl,
+            shape,
+            scale,
+            hideDefaultBrand: false,
+          }));
+          setLogoEditorSource(null);
+        }}
+      />
     </div>
   );
 }

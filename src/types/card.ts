@@ -19,14 +19,34 @@ export interface FontOption {
 }
 
 export type LogoBadgeStyle = 'auto' | 'white' | 'frosted' | 'none';
+export type LogoShape = 'original' | 'square' | 'rounded' | 'circle' | 'pill';
 
 export interface LogoSettings {
   dataUrl: string | null;
   scale: number; // 20..200 (%)
-  x: number; // -100..100 (%)
-  y: number; // -100..100 (%)
+  x: number; // -200..200 (%)
+  y: number; // -200..200 (%)
   hideDefaultBrand: boolean;
   badgeStyle?: LogoBadgeStyle;
+  shape?: LogoShape;
+}
+
+export interface SubheadingSettings {
+  text: string;
+  fontSizePercent: number; // 60..180
+  color: string; // empty string = match template/headline color
+  offsetX: number; // -0.48..0.48
+  offsetY: number; // -0.48..0.48
+}
+
+export interface CustomTextItem {
+  id: string;
+  text: string;
+  x: number; // 0..1 normalized
+  y: number; // 0..1 normalized
+  fontSize: number; // reference px at 1080w (16..110)
+  color: string;
+  bgColor: string | null;
 }
 
 export interface BrandLogoSlot {
@@ -164,4 +184,6 @@ export interface RenderedLayoutMetrics {
   textHitBox: RectBox;
   photoHitBox: RectBox;
   logoHitBox: RectBox | null;
+  subheadingHitBox: RectBox | null;
+  customTextHitBoxes: Array<{ id: string; box: RectBox }>;
 }

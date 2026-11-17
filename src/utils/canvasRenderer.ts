@@ -1,12 +1,15 @@
 import type {
   BrandLogoSlot,
+  CustomTextItem,
   FontOption,
   HighlightRange,
   LineMode,
   LogoBadgeStyle,
   LogoSettings,
+  LogoShape,
   RectBox,
   RenderedLayoutMetrics,
+  SubheadingSettings,
   TemplateConfig,
 } from '../types/card';
 
@@ -32,6 +35,9 @@ export interface RenderCardOptions {
   photoPanX: number;
   photoPanY: number;
   logoSettings: LogoSettings;
+  subheading?: SubheadingSettings;
+  customTexts?: CustomTextItem[];
+  activeCustomTextId?: string | null;
   isExport?: boolean;
   snapState?: { snappedX: boolean; snappedY: boolean; isDragging: boolean };
 }
@@ -2564,15 +2570,24 @@ function drawUnifiedBrandLogo(
   activeLogoImg: HTMLImageElement,
   logoSettings: LogoSettings
 ): RectBox {
-  const fitScale = Math.min(
-    slot.maxWidth / activeLogoImg.naturalWidth,
-    slot.maxHeight / activeLogoImg.naturalHeight
-  );
-  const baseW = activeLogoImg.naturalWidth * fitScale;
-  const baseH = activeLogoImg.naturalHeight * fitScale;
   const userScale = Math.max(0.25, Math.min(2.0, (logoSettings.scale || 100) / 100));
-  const drawW = baseW * userScale;
-  const drawH = baseH * userScale;
+  const shape: LogoShape = logoSettings.shape ?? 'original';
+
+  let drawW: number;
+  let drawH: number;
+
+  if (shape === 'circle') {
+    const circleSize = Math.min(slot.maxWidth, slot.maxHeight * 1.2) * userScale;
+    drawW = circleSize;
+    drawH = circleSize;
+  } else {
+    const fitScale = Math.min(
+      slot.maxWidth / activeLogoImg.naturalWidth,
+      slot.maxHeight / activeLogoImg.naturalHeight
+    );
+    drawW = activeLogoImg.naturalWidth * fitScale * userScale;
+    drawH = activeLogoImg.naturalHeight * fitScale * userScale;
+  }
 
   let anchorCenterX = slot.x + slot.maxWidth / 2;
   if (slot.align === 'left') {
@@ -2582,8 +2597,8 @@ function drawUnifiedBrandLogo(
   }
   const anchorCenterY = slot.y + slot.maxHeight / 2;
 
-  const logoCenterX = anchorCenterX + (logoSettings.x / 100) * (W * 0.42);
-  const logoCenterY = anchorCenterY + (logoSettings.y / 100) * (H * 0.42);
+  const logoCenterX = anchorCenterX + (logoSettings.x / 100) * (W * 0.45);
+  const logoCenterY = anchorCenterY + (logoSettings.y / 100) * (H * 0.45);
 
   const lx = logoCenterX - drawW / 2;
   const ly = logoCenterY - drawH / 2;
@@ -2594,16 +2609,30 @@ function drawUnifiedBrandLogo(
     badgeMode === 'frosted' ||
     (badgeMode === 'auto' && slot.surfaceIsDark);
 
-  const padX = slot.padX ?? Math.max(10, Math.round(drawH * 0.22));
-  const padY = slot.padY ?? Math.max(6, Math.round(drawH * 0.14));
+  const padX =
+    shape === 'circle'
+      ? Math.max(5, Math.round(drawW * 0.08))
+      : slot.padX ?? Math.max(10, Math.round(drawH * 0.22));
+  const padY =
+    shape === 'circle'
+      ? padX
+      : slot.padY ?? Math.max(6, Math.round(drawH * 0.14));
   const bx = lx - padX;
   const by = ly - padY;
   const bw = drawW + padX * 2;
   const bh = drawH + padY * 2;
 
+  const resolveCornerRadius = (w: number, h: number): number => {
+    if (shape === 'circle') return Math.max(w, h) / 2;
+    if (shape === 'square') return 0;
+    if (shape === 'rounded') return Math.round(Math.min(w, h) * 0.22);
+    if (shape === 'pill') return Math.round(Math.min(w, h) / 2);
+    return slot.pillRadius ?? Math.round(h / 2);
+  };
+
   ctx.save();
   if (showBadge) {
-    const radius = slot.pillRadius ?? Math.round(bh / 2);
+    const badgeRadius = resolveCornerRadius(bw, bh);
     ctx.save();
     ctx.shadowColor =
       badgeMode === 'frosted'
@@ -2618,8 +2647,15 @@ function drawUnifiedBrandLogo(
     } else {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.97)';
     }
-    drawRoundedRect(ctx, bx, by, bw, bh, radius);
-    ctx.fill();
+    if (shape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(logoCenterX, logoCenterY, Math.max(bw, bh) / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      drawRoundedRect(ctx, bx, by, bw, bh, badgeRadius);
+      ctx.fill();
+    }
     ctx.restore();
 
     ctx.strokeStyle =
@@ -2629,8 +2665,15 @@ function drawUnifiedBrandLogo(
           : 'rgba(148, 163, 184, 0.42)'
         : 'rgba(15, 23, 42, 0.12)';
     ctx.lineWidth = Math.max(1.5, Math.round(bh * 0.025));
-    drawRoundedRect(ctx, bx, by, bw, bh, radius);
-    ctx.stroke();
+    if (shape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(logoCenterX, logoCenterY, Math.max(bw, bh) / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.stroke();
+    } else {
+      drawRoundedRect(ctx, bx, by, bw, bh, badgeRadius);
+      ctx.stroke();
+    }
   } else if (slot.surfaceIsDark) {
     ctx.shadowColor = 'rgba(0, 0, 0, 0.68)';
     ctx.shadowBlur = Math.max(4, Math.round(drawH * 0.12));
@@ -2638,7 +2681,45 @@ function drawUnifiedBrandLogo(
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(activeLogoImg, lx, ly, drawW, drawH);
+
+  if (shape === 'original') {
+    ctx.drawImage(activeLogoImg, lx, ly, drawW, drawH);
+  } else {
+    ctx.save();
+    if (shape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(logoCenterX, logoCenterY, drawW / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+
+      // Cover-fit square/circle logos cleanly, or contain-fit wide logos over crisp translucent backdrop
+      const imgAspect = activeLogoImg.naturalWidth / Math.max(1, activeLogoImg.naturalHeight);
+      if (imgAspect > 1.45 || imgAspect < 0.68) {
+        if (!showBadge) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+          ctx.fillRect(lx, ly, drawW, drawH);
+        }
+        const pad = drawW * 0.1;
+        const inner = drawW - pad * 2;
+        const s = Math.min(inner / activeLogoImg.naturalWidth, inner / activeLogoImg.naturalHeight);
+        const iw = activeLogoImg.naturalWidth * s;
+        const ih = activeLogoImg.naturalHeight * s;
+        ctx.drawImage(activeLogoImg, logoCenterX - iw / 2, logoCenterY - ih / 2, iw, ih);
+      } else {
+        const s = Math.max(drawW / activeLogoImg.naturalWidth, drawH / activeLogoImg.naturalHeight);
+        const iw = activeLogoImg.naturalWidth * s;
+        const ih = activeLogoImg.naturalHeight * s;
+        ctx.drawImage(activeLogoImg, logoCenterX - iw / 2, logoCenterY - ih / 2, iw, ih);
+      }
+    } else {
+      const clipRadius = resolveCornerRadius(drawW, drawH);
+      drawRoundedRect(ctx, lx, ly, drawW, drawH, clipRadius);
+      ctx.clip();
+      ctx.drawImage(activeLogoImg, lx, ly, drawW, drawH);
+    }
+    ctx.restore();
+  }
+
   ctx.restore();
 
   return showBadge
@@ -2669,6 +2750,9 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     photoPanX,
     photoPanY,
     logoSettings,
+    subheading,
+    customTexts,
+    activeCustomTextId,
     isExport = false,
     snapState,
   } = opts;
@@ -2729,7 +2813,8 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     const hasLogoTransform =
       logoSettings.scale !== 100 ||
       logoSettings.x !== 0 ||
-      logoSettings.y !== 0;
+      logoSettings.y !== 0 ||
+      (logoSettings.shape ?? 'original') !== 'original';
     const needsBadgeOverPsd =
       badgeMode === 'white' ||
       badgeMode === 'frosted' ||
@@ -2836,6 +2921,9 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     }
     ctx.restore();
   }
+
+  let renderedHeadlineBottomY = centerY + hb.maxHeight * 0.25;
+  let renderedHeadlineLeftX = hb.centerX - hb.maxWidth / 2;
 
   if (trimmedHeadline.length > 0) {
     const mask = buildHighlightMask(headline, highlights);
@@ -2956,6 +3044,7 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     const firstLineCenterY = centerY - ((numLines - 1) * lineHeight) / 2;
     const isLeftAligned = template.headlineAlign === 'left';
     const leftAnchorX = (hb.centerX - hb.maxWidth / 2) + textOffsetX * W;
+    renderedHeadlineLeftX = leftAnchorX;
 
     for (let lineIdx = 0; lineIdx < numLines; lineIdx++) {
       const words = finalLines[lineIdx];
@@ -2987,6 +3076,74 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
       width: Math.max(120, maxRenderedLineW + padX * 2),
       height: Math.max(60, blockHeight + padY * 2),
     };
+    renderedHeadlineBottomY = centerY + blockHeight / 2;
+  }
+
+  // 2B. Sub-heading Text (Optional, Draggable anywhere on canvas)
+  let subheadingHitBox: RectBox | null = null;
+  const trimmedSubheading = subheading?.text?.trim() || '';
+  if (trimmedSubheading.length > 0 && subheading) {
+    const subScale = Math.max(0.6, Math.min(1.8, (subheading.fontSizePercent || 100) / 100));
+    const subFontSize = Math.max(14, Math.round(hb.baseFontSize * 0.44 * subScale));
+    const subLineHeight = subFontSize * 1.32;
+    const subMaxW = hb.maxWidth * 0.94;
+    const isLeftAligned = template.headlineAlign === 'left';
+
+    ctx.save();
+    ctx.font = `500 ${subFontSize}px ${font.family}`;
+    const subLines: string[] = [];
+    for (const para of trimmedSubheading.split(/\r?\n/)) {
+      const words = para.trim().split(/\s+/).filter(Boolean);
+      if (words.length === 0) {
+        subLines.push('');
+        continue;
+      }
+      let curr = words[0];
+      for (let i = 1; i < words.length; i++) {
+        const test = `${curr} ${words[i]}`;
+        if (ctx.measureText(test).width <= subMaxW) {
+          curr = test;
+        } else {
+          subLines.push(curr);
+          curr = words[i];
+        }
+      }
+      subLines.push(curr);
+    }
+
+    const subBlockH = subLines.length * subLineHeight;
+    const baseSubY =
+      (trimmedHeadline.length > 0 ? renderedHeadlineBottomY + subFontSize * 0.72 : centerY) +
+      subheading.offsetY * H;
+    const baseSubX =
+      (isLeftAligned ? renderedHeadlineLeftX : centerX) + subheading.offsetX * W;
+
+    if (textShadow) {
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+      ctx.shadowBlur = Math.max(3, subFontSize * 0.14);
+      ctx.shadowOffsetY = Math.max(1, subFontSize * 0.05);
+    }
+    ctx.fillStyle = subheading.color?.trim() ? subheading.color : textColor;
+    ctx.textAlign = isLeftAligned ? 'left' : 'center';
+    ctx.textBaseline = 'middle';
+
+    let maxSubLineW = 0;
+    const startLineY = baseSubY - ((subLines.length - 1) * subLineHeight) / 2;
+    for (let i = 0; i < subLines.length; i++) {
+      const line = subLines[i];
+      maxSubLineW = Math.max(maxSubLineW, ctx.measureText(line).width);
+      ctx.fillText(line, baseSubX, startLineY + i * subLineHeight);
+    }
+    ctx.restore();
+
+    const subPadX = Math.max(20, subFontSize * 0.45);
+    const subPadY = Math.max(14, subFontSize * 0.35);
+    subheadingHitBox = {
+      x: (isLeftAligned ? baseSubX : baseSubX - maxSubLineW / 2) - subPadX,
+      y: baseSubY - subBlockH / 2 - subPadY,
+      width: Math.max(90, maxSubLineW + subPadX * 2),
+      height: Math.max(40, subBlockH + subPadY * 2),
+    };
   }
 
   // 3. Unified Brand Logo Pass (Official Shyamal Sylhet Logo OR Custom Uploaded Logo)
@@ -3010,11 +3167,89 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     logoHitBox = drawUnifiedBrandLogo(ctx, W, H, brandSlot, activeLogoImg, logoSettings);
   }
 
+  // 4. Custom Floating Text Layers (Added via Pencil click-to-place or Quick Text Add)
+  const customTextHitBoxes: Array<{ id: string; box: RectBox }> = [];
+  if (customTexts && customTexts.length > 0) {
+    const scaleFactor = W / 1080;
+    for (const item of customTexts) {
+      const content = item.text.trim();
+      if (!content) continue;
+
+      const pxFontSize = Math.max(12, Math.round((item.fontSize || 34) * scaleFactor));
+      const lines = content.split(/\r?\n/);
+      const lineH = pxFontSize * 1.28;
+
+      ctx.save();
+      ctx.font = `700 ${pxFontSize}px ${font.family}`;
+      let maxLineW = 0;
+      for (const ln of lines) {
+        maxLineW = Math.max(maxLineW, ctx.measureText(ln).width);
+      }
+
+      const cx = Math.max(0.03, Math.min(0.97, item.x)) * W;
+      const cy = Math.max(0.03, Math.min(0.97, item.y)) * H;
+      const padX = item.bgColor ? Math.max(12, Math.round(pxFontSize * 0.45)) : Math.max(10, Math.round(pxFontSize * 0.25));
+      const padY = item.bgColor ? Math.max(7, Math.round(pxFontSize * 0.24)) : Math.max(8, Math.round(pxFontSize * 0.2));
+      const boxW = Math.max(36, maxLineW + padX * 2);
+      const boxH = Math.max(24, lines.length * lineH + padY * 2);
+      const bx = cx - boxW / 2;
+      const by = cy - boxH / 2;
+
+      if (item.bgColor) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+        ctx.shadowBlur = Math.max(6, Math.round(pxFontSize * 0.22));
+        ctx.fillStyle = item.bgColor;
+        drawRoundedRect(ctx, bx, by, boxW, boxH, Math.max(8, Math.round(pxFontSize * 0.3)));
+        ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.78)';
+        ctx.shadowBlur = Math.max(5, Math.round(pxFontSize * 0.22));
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = Math.max(2, Math.round(pxFontSize * 0.07));
+      }
+
+      ctx.fillStyle = item.color || '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const firstY = cy - ((lines.length - 1) * lineH) / 2;
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], cx, firstY + i * lineH);
+      }
+
+      if (!isExport && activeCustomTextId === item.id) {
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#faab3f';
+        ctx.lineWidth = Math.max(2, Math.round(W * 0.003));
+        ctx.setLineDash([Math.round(W * 0.01), Math.round(W * 0.007)]);
+        drawRoundedRect(
+          ctx,
+          bx - 4 * scaleFactor,
+          by - 4 * scaleFactor,
+          boxW + 8 * scaleFactor,
+          boxH + 8 * scaleFactor,
+          Math.max(8, Math.round(pxFontSize * 0.3))
+        );
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      customTextHitBoxes.push({
+        id: item.id,
+        box: { x: bx, y: by, width: boxW, height: boxH },
+      });
+    }
+  }
+
   return {
     canvasWidth: W,
     canvasHeight: H,
     textHitBox,
     photoHitBox: template.photoBox,
     logoHitBox,
+    subheadingHitBox,
+    customTextHitBoxes,
   };
 }

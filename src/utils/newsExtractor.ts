@@ -303,6 +303,6 @@ export async function fetchJinaClient(
     }
     return { title, image };
   } catch {
-    return { title, image: '' };
+    return { title: '', image: '' };
   }
 }

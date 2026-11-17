@@ -39,6 +39,9 @@ export const Navbar: React.FC = () => {
           <NavLink to="/my-work" className={navLinkClass}>
             আমার কাজ
           </NavLink>
+          <NavLink to="/learn" className={navLinkClass}>
+            শিখুন
+          </NavLink>
         </nav>
 
         {/* Right: Theme Toggle + Single Primary CTA */}
@@ -77,7 +80,7 @@ export const Navbar: React.FC = () => {
       {mobileMenuOpen && (
         <nav
           aria-label="মোবাইল নেভিগেশন"
-          className="flex items-center gap-2 border-t border-[#E5E7EB] bg-white px-4 py-2.5 md:hidden dark:border-[#1F2937] dark:bg-[#111827]"
+          className="flex flex-wrap items-center gap-2 border-t border-[#E5E7EB] bg-white px-4 py-2.5 md:hidden dark:border-[#1F2937] dark:bg-[#111827]"
         >
           <NavLink
             to="/"
@@ -100,6 +103,13 @@ export const Navbar: React.FC = () => {
             className={navLinkClass}
           >
             আমার কাজ
+          </NavLink>
+          <NavLink
+            to="/learn"
+            onClick={() => setMobileMenuOpen(false)}
+            className={navLinkClass}
+          >
+            শিখুন
           </NavLink>
         </nav>
       )}

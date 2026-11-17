@@ -41,6 +41,12 @@ export const Footer: React.FC = () => {
           >
             আমার কাজ
           </Link>
+          <Link
+            to="/learn"
+            className="transition-colors hover:text-[#0F172A] whitespace-nowrap dark:hover:text-slate-100"
+          >
+            শিখুন
+          </Link>
         </div>
       </div>
     </footer>

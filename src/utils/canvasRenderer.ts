@@ -7,6 +7,7 @@ import type {
   LogoBadgeStyle,
   LogoSettings,
   LogoShape,
+  ProceduralStyleType,
   RectBox,
   RenderedLayoutMetrics,
   SubheadingSettings,
@@ -312,6 +313,20 @@ function getBengaliDateString(): string {
     }).format(new Date());
   } catch {
     return '';
+  }
+}
+
+function getBengaliWeekdayAndDateString(): string {
+  try {
+    const weekday = new Intl.DateTimeFormat('bn-BD', { weekday: 'long' }).format(new Date());
+    const datePart = new Intl.DateTimeFormat('bn-BD', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date());
+    return `${weekday} | ${datePart}`;
+  } catch {
+    return getBengaliDateString();
   }
 }
 
@@ -2478,6 +2493,647 @@ function renderProceduralTemplateChrome(
       padX: 14,
       padY: 8,
     };
+  } else if (template.styleType === 'portal-sylhetvoice-blue') {
+    const seamY = pBox.y + pBox.height;
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Smooth feathered blue gradient rising from lower panel over bottom of photo
+    const blueBody = ctx.createLinearGradient(0, seamY - 170, 0, H);
+    blueBody.addColorStop(0, 'rgba(84, 123, 200, 0)');
+    blueBody.addColorStop(0.28, 'rgba(80, 119, 196, 0.94)');
+    blueBody.addColorStop(0.42, '#5077c4');
+    blueBody.addColorStop(1, '#3f64b3');
+    ctx.fillStyle = blueBody;
+    ctx.fillRect(0, seamY - 170, W, H - (seamY - 170));
+
+    // Top-right slanted crimson ribbon (date by default, or customized kickerText)
+    const ribbonLabel = kicker || dateStr;
+    if (ribbonLabel) {
+      ctx.save();
+      ctx.font = `700 28px 'Hind Siliguri', 'Kalpurush', sans-serif`;
+      const tw = ctx.measureText(ribbonLabel).width;
+      const rw = Math.max(230, Math.min(440, tw + 92));
+      const rh = 68;
+      const ry = 60;
+      const slant = 28;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 4;
+      ctx.fillStyle = '#d11919';
+      ctx.beginPath();
+      ctx.moveTo(W - rw + slant, ry);
+      ctx.lineTo(W, ry);
+      ctx.lineTo(W, ry + rh);
+      ctx.lineTo(W - rw, ry + rh);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 28px 'Hind Siliguri', 'Kalpurush', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ribbonLabel, W - (rw - slant / 2) / 2, ry + rh / 2 + 1);
+    }
+
+    // Thin bottom divider rule
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.48)';
+    ctx.fillRect(68, H - 118, W - 136, 2);
+
+    if (ctaText) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `600 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, 68, H - 62);
+    }
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      ctx.save();
+      ctx.font = `600 28px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      const urlW = ctx.measureText(webUrl).width;
+      const dotR = 9;
+      const dotX = W - 68 - urlW - 22;
+      ctx.beginPath();
+      ctx.arc(dotX, H - 62, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = '#facc15';
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(webUrl, W - 68, H - 62);
+      ctx.restore();
+    }
+
+    return {
+      x: 0,
+      y: 54,
+      maxWidth: 332,
+      maxHeight: 102,
+      align: 'left',
+      surfaceIsDark: false,
+      pillRadius: 51,
+      padX: 18,
+      padY: 10,
+    };
+  } else if (template.styleType === 'portal-protidiner-cream') {
+    // Warm cream canvas with soft blush layered side framing
+    ctx.fillStyle = '#f4e5e6';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fbf5ee';
+    ctx.fillRect(0, 0, W, 650);
+    ctx.fillRect(46, 650, W - 92, H - 692);
+
+    // Top-left live Bengali date (or kicker)
+    const topLeftLabel = kicker || dateStr;
+    if (topLeftLabel) {
+      ctx.fillStyle = '#111827';
+      ctx.font = `600 29px 'Hind Siliguri', 'Kalpurush', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(topLeftLabel, 38, 56);
+    }
+
+    // Center framed photo with thin crimson border
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+    ctx.strokeStyle = '#9f3b42';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(pBox.x, pBox.y, pBox.width, pBox.height);
+
+    // Bottom rectangular crimson CTA bar
+    if (ctaText) {
+      const bw = 470;
+      const bh = 64;
+      const bx = (W - bw) / 2;
+      const by = H - 108;
+      ctx.fillStyle = '#a81321';
+      ctx.fillRect(bx, by, bw, bh);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 32px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, by + bh / 2 + 1);
+    }
+
+    return {
+      x: 825,
+      y: 16,
+      maxWidth: 344,
+      maxHeight: 88,
+      align: 'right',
+      surfaceIsDark: false,
+      pillRadius: 12,
+      padX: 10,
+      padY: 6,
+    };
+  } else if (template.styleType === 'portal-sylhetvoice-dark') {
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Smooth dark bottom scrim
+    const darkScrim = ctx.createLinearGradient(0, H * 0.42, 0, H);
+    darkScrim.addColorStop(0, 'rgba(8, 9, 12, 0)');
+    darkScrim.addColorStop(0.45, 'rgba(8, 9, 12, 0.78)');
+    darkScrim.addColorStop(0.75, 'rgba(7, 8, 10, 0.94)');
+    darkScrim.addColorStop(1, '#060608');
+    ctx.fillStyle = darkScrim;
+    ctx.fillRect(0, H * 0.42, W, H * 0.58);
+
+    // Top-right slanted crimson category ribbon
+    if (kicker) {
+      ctx.save();
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const tw = ctx.measureText(kicker).width;
+      const rw = Math.max(210, Math.min(420, tw + 110));
+      const rh = 68;
+      const ry = 60;
+      const slant = 28;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 4;
+      ctx.fillStyle = '#d11919';
+      ctx.beginPath();
+      ctx.moveTo(W - rw + slant, ry);
+      ctx.lineTo(W, ry);
+      ctx.lineTo(W, ry + rh);
+      ctx.lineTo(W - rw, ry + rh);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, W - (rw - slant / 2) / 2, ry + rh / 2 + 1);
+    }
+
+    // Subtle red dot + date row above horizontal divider
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(76, H - 152, 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#d11919';
+    ctx.fill();
+    ctx.fillStyle = '#e5e7eb';
+    ctx.font = `600 24px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, 98, H - 152);
+    ctx.restore();
+
+    // Thin divider rule
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.fillRect(68, H - 114, W - 136, 1.5);
+
+    // Bottom footer row: CTA left, yellow dot + URL center-right
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (ctaText && webUrl) {
+      ctx.save();
+      ctx.font = `600 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const ctaW = ctx.measureText(ctaText).width;
+      ctx.font = `600 26px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      const urlW = ctx.measureText(webUrl).width;
+      const totalW = ctaW + 52 + urlW;
+      const startX = (W - totalW) / 2;
+
+      ctx.fillStyle = '#d1d5db';
+      ctx.font = `600 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, startX, H - 60);
+
+      ctx.beginPath();
+      ctx.arc(startX + ctaW + 26, H - 60, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#facc15';
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 26px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      ctx.fillText(webUrl, startX + ctaW + 52, H - 60);
+      ctx.restore();
+    } else if (ctaText || webUrl) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 26px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText || webUrl, W / 2, H - 60);
+    }
+
+    return {
+      x: 0,
+      y: 62,
+      maxWidth: 294,
+      maxHeight: 112,
+      align: 'left',
+      surfaceIsDark: false,
+      pillRadius: 56,
+      padX: 16,
+      padY: 10,
+    };
+  } else if (template.styleType === 'portal-protidiner-black') {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+
+    if (kicker) {
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = `500 42px 'Kalpurush', 'Noto Serif Bengali', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, 54, 72);
+    }
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+    ctx.strokeStyle = '#991b1b';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(pBox.x, pBox.y, pBox.width, pBox.height);
+
+    if (ctaText) {
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 44px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, 54, H - 98);
+      const ctaW = ctx.measureText(ctaText).width;
+      ctx.fillRect(54, H - 68, ctaW + 12, 3);
+      ctx.restore();
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `500 30px 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dateStr, W - 54, H - 56);
+
+    return {
+      x: 700,
+      y: 36,
+      maxWidth: 452,
+      maxHeight: 72,
+      align: 'right',
+      surfaceIsDark: true,
+      pillRadius: 12,
+      padX: 12,
+      padY: 6,
+    };
+  } else if (template.styleType === 'portal-protidiner-split') {
+    const seamY = pBox.y + pBox.height;
+    // Upper silver-grey panel + lower jet-black panel
+    ctx.fillStyle = '#cfcfcf';
+    ctx.fillRect(0, 0, W, seamY);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, seamY, W, H - seamY);
+
+    if (kicker) {
+      ctx.fillStyle = '#111827';
+      ctx.font = `700 24px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kicker, 36, 46);
+    }
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+    ctx.strokeStyle = '#7f1d1d';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(pBox.x, pBox.y, pBox.width, pBox.height);
+
+    if (ctaText) {
+      ctx.save();
+      ctx.font = `700 32px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const tw = ctx.measureText(ctaText).width;
+      const bw = Math.max(296, Math.min(540, tw + 78));
+      const bh = 74;
+      const bx = (W - bw) / 2;
+      const by = H - 104;
+      ctx.fillStyle = '#be1e2d';
+      drawRoundedRect(ctx, bx, by, bw, bh, 22);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, by + bh / 2 + 2);
+      ctx.restore();
+    }
+
+    return {
+      x: W / 2 - 175,
+      y: 22,
+      maxWidth: 350,
+      maxHeight: 102,
+      align: 'center',
+      surfaceIsDark: false,
+      pillRadius: 12,
+      padX: 12,
+      padY: 6,
+    };
+  } else if (template.styleType === 'portal-emjanews') {
+    const seamY = pBox.y + pBox.height;
+    const footerH = 114;
+
+    // White photo frame margin
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, seamY);
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(pBox.x, pBox.y, pBox.width, pBox.height);
+
+    // Lower rich crimson gradient
+    const redBody = ctx.createLinearGradient(0, seamY, 0, H - footerH);
+    redBody.addColorStop(0, '#9e0000');
+    redBody.addColorStop(0.55, '#850000');
+    redBody.addColorStop(1, '#680000');
+    ctx.fillStyle = redBody;
+    ctx.fillRect(0, seamY, W, H - footerH - seamY);
+
+    // Subtle halftone map texture
+    drawHalftoneDots(ctx, 30, seamY + 20, W - 60, H - footerH - seamY - 40, 'rgba(0, 0, 0, 0.16)', 18, 2.5);
+
+    if (kicker) {
+      drawDynamicBadge(ctx, kicker, pBox.x + 24, pBox.y + 24, 46, '#0e3c87', '#facc15', 6, 'left', 24);
+    }
+
+    // Navy CTA pill with crisp white border
+    if (ctaText) {
+      ctx.save();
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const tw = ctx.measureText(ctaText).width;
+      const bw = Math.max(264, Math.min(520, tw + 66));
+      const bh = 54;
+      const bx = (W - bw) / 2;
+      const by = H - footerH - 72;
+      ctx.fillStyle = '#0e3c87';
+      drawRoundedRect(ctx, bx, by, bw, bh, 7);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      drawRoundedRect(ctx, bx, by, bw, bh, 7);
+      ctx.stroke();
+
+      ctx.fillStyle = '#facc15';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, by + bh / 2 + 1);
+      ctx.restore();
+    }
+
+    // Bottom crisp white strip
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, H - footerH, W, footerH);
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      ctx.fillStyle = '#8f1111';
+      ctx.font = `700 38px Georgia, 'Plus Jakarta Sans', serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(webUrl, W - 28, H - footerH / 2 + 2);
+    }
+
+    return {
+      x: 20,
+      y: H - footerH + 10,
+      maxWidth: 292,
+      maxHeight: 94,
+      align: 'left',
+      surfaceIsDark: false,
+      pillRadius: 12,
+      padX: 10,
+      padY: 6,
+    };
+  } else if (template.styleType === 'portal-sylhetview') {
+    const seamY = pBox.y + pBox.height;
+    const footerH = 92;
+
+    // White upper margin around photo
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, seamY + 4);
+    // Subtle crimson top-right sheen accent behind margin
+    const topSheen = ctx.createLinearGradient(W * 0.65, 0, W, 140);
+    topSheen.addColorStop(0, 'rgba(189, 22, 26, 0)');
+    topSheen.addColorStop(1, 'rgba(189, 22, 26, 0.22)');
+    ctx.fillStyle = topSheen;
+    ctx.fillRect(W * 0.65, 0, W * 0.35, 160);
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Rich crimson gradient panel below photo
+    const redPanel = ctx.createLinearGradient(0, seamY, 0, H - footerH);
+    redPanel.addColorStop(0, '#c2171b');
+    redPanel.addColorStop(1, '#98080c');
+    ctx.fillStyle = redPanel;
+    ctx.fillRect(0, seamY, W, H - footerH - seamY);
+
+    if (kicker) {
+      drawDynamicBadge(ctx, kicker, pBox.x + 22, pBox.y + 22, 46, '#ffffff', '#b91c1c', 8, 'left', 24);
+    }
+
+    // Bottom white CTA pill + 3 white dots on left & right
+    if (ctaText) {
+      ctx.save();
+      ctx.font = `700 38px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const tw = ctx.measureText(ctaText).width;
+      const bw = Math.max(460, Math.min(680, tw + 110));
+      const bh = 74;
+      const bx = (W - bw) / 2;
+      const by = H - footerH - 96;
+      ctx.fillStyle = '#ffffff';
+      drawRoundedRect(ctx, bx, by, bw, bh, 18);
+      ctx.fill();
+
+      for (const dir of [-1, 1]) {
+        for (let d = 1; d <= 3; d++) {
+          ctx.beginPath();
+          ctx.arc(W / 2 + dir * (bw / 2 + 24 + d * 48), by + bh / 2, 13, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        }
+      }
+
+      ctx.fillStyle = '#111827';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, W / 2, by + bh / 2 + 2);
+      ctx.restore();
+    }
+
+    // Bottom crisp white strip
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, H - footerH, W, footerH);
+
+    const webUrl = template.websiteUrl?.trim() || '';
+    if (webUrl) {
+      const fy = H - footerH / 2 + 1;
+      // Red triangle arrow + editable website URL
+      ctx.save();
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.moveTo(298, fy - 11);
+      ctx.lineTo(316, fy);
+      ctx.lineTo(298, fy + 11);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#111827';
+      ctx.font = `600 28px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(webUrl, 322, fy);
+
+      // Derive clean social handles from websiteUrl
+      const cleanHost = webUrl.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
+      const fbLabel = cleanHost === 'sylhetview24.news' ? 'Sylhetview24.com' : cleanHost;
+      const ytLabel = cleanHost === 'sylhetview24.news' ? 'Sylhetview' : cleanHost.split('.')[0];
+
+      // YouTube badge + label on far right
+      ctx.font = `600 25px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      const ytW = ctx.measureText(ytLabel).width;
+      const ytTextX = W - 26;
+      const ytBoxX = ytTextX - ytW - 46;
+
+      ctx.fillStyle = '#dc2626';
+      drawRoundedRect(ctx, ytBoxX, fy - 18, 38, 36, 7);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(ytBoxX + 14, fy - 7);
+      ctx.lineTo(ytBoxX + 27, fy);
+      ctx.lineTo(ytBoxX + 14, fy + 7);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#111827';
+      ctx.textAlign = 'right';
+      ctx.fillText(ytLabel, ytTextX, fy);
+
+      // Facebook badge + label to left of YouTube
+      const fbTextX = ytBoxX - 18;
+      const fbW = ctx.measureText(fbLabel).width;
+      const fbBoxX = fbTextX - fbW - 44;
+
+      ctx.fillStyle = '#1877f2';
+      drawRoundedRect(ctx, fbBoxX, fy - 18, 36, 36, 7);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 28px 'Plus Jakarta Sans', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('f', fbBoxX + 18, fy + 2);
+
+      ctx.fillStyle = '#111827';
+      ctx.font = `600 25px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.fillText(fbLabel, fbTextX, fy);
+      ctx.restore();
+    }
+
+    return {
+      x: 16,
+      y: H - footerH + 6,
+      maxWidth: 270,
+      maxHeight: 80,
+      align: 'left',
+      surfaceIsDark: false,
+      pillRadius: 10,
+      padX: 6,
+      padY: 4,
+    };
+  } else if (template.styleType === 'portal-sylhettoday') {
+    const seamY = pBox.y + pBox.height;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+
+    // Smooth dark fade across seam into jet black lower panel
+    const seamFade = ctx.createLinearGradient(0, seamY - 190, 0, seamY + 12);
+    seamFade.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    seamFade.addColorStop(0.55, 'rgba(0, 0, 0, 0.72)');
+    seamFade.addColorStop(1, '#000000');
+    ctx.fillStyle = seamFade;
+    ctx.fillRect(0, seamY - 190, W, 204);
+
+    // Left white rectangular date tag (weekday | date)
+    const leftDateLabel = kicker || getBengaliWeekdayAndDateString();
+    if (leftDateLabel) {
+      ctx.save();
+      ctx.font = `600 23px 'Hind Siliguri', 'Kalpurush', sans-serif`;
+      const tw = ctx.measureText(leftDateLabel).width;
+      const bw = Math.max(220, Math.min(340, tw + 46));
+      const bh = 38;
+      const by = seamY - 56;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, by, bw, bh);
+
+      // Small blue left chevron arrow
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.moveTo(0, by + 10);
+      ctx.lineTo(14, by + 10);
+      ctx.lineTo(24, by + bh / 2);
+      ctx.lineTo(14, by + bh - 10);
+      ctx.lineTo(0, by + bh - 10);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#111827';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(leftDateLabel, 32, by + bh / 2 + 1);
+      ctx.restore();
+    }
+
+    // Bottom-right blue arrow chevron + white CTA
+    if (ctaText) {
+      ctx.save();
+      ctx.font = `700 28px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+      const tw = ctx.measureText(ctaText).width;
+      const rightX = W - 44;
+      const cy = H - 56;
+      const arrowX = rightX - tw - 48;
+
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.moveTo(arrowX, cy - 8);
+      ctx.lineTo(arrowX + 26, cy - 8);
+      ctx.lineTo(arrowX + 36, cy);
+      ctx.lineTo(arrowX + 26, cy + 8);
+      ctx.lineTo(arrowX, cy + 8);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#e0f2fe';
+      ctx.beginPath();
+      ctx.moveTo(arrowX + 20, cy - 8);
+      ctx.lineTo(arrowX + 28, cy - 8);
+      ctx.lineTo(arrowX + 38, cy);
+      ctx.lineTo(arrowX + 28, cy + 8);
+      ctx.lineTo(arrowX + 20, cy + 8);
+      ctx.lineTo(arrowX + 30, cy);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ctaText, rightX, cy);
+      ctx.restore();
+    }
+
+    return {
+      x: W / 2 - 205,
+      y: seamY - 76,
+      maxWidth: 410,
+      maxHeight: 82,
+      align: 'center',
+      surfaceIsDark: false,
+      pillRadius: 41,
+      padX: 16,
+      padY: 8,
+    };
   } else {
     // modern-inset-card
     drawRoundedRect(ctx, 28, 28, W - 56, H - 56, 28);
@@ -2725,6 +3381,415 @@ function drawUnifiedBrandLogo(
   return showBadge
     ? { x: bx, y: by, width: bw, height: bh }
     : { x: lx, y: ly, width: drawW, height: drawH };
+}
+
+function isBuiltInPortalLogoTemplate(styleType: ProceduralStyleType): boolean {
+  return (
+    styleType === 'portal-sylhetvoice-blue' ||
+    styleType === 'portal-protidiner-cream' ||
+    styleType === 'portal-sylhetvoice-dark' ||
+    styleType === 'portal-protidiner-black' ||
+    styleType === 'portal-protidiner-split' ||
+    styleType === 'portal-emjanews' ||
+    styleType === 'portal-sylhetview' ||
+    styleType === 'portal-sylhettoday'
+  );
+}
+
+function drawVerifiedBlueCheck(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#1d9bf0';
+  ctx.fill();
+
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = Math.max(2, r * 0.22);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.42, cy + r * 0.04);
+  ctx.lineTo(cx - r * 0.1, cy + r * 0.36);
+  ctx.lineTo(cx + r * 0.45, cy - r * 0.32);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPortalDefaultLogo(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  slot: BrandLogoSlot,
+  styleType: ProceduralStyleType,
+  logoSettings: LogoSettings
+): RectBox {
+  const userScale = Math.max(0.25, Math.min(2.0, (logoSettings.scale || 100) / 100));
+  const shape: LogoShape = logoSettings.shape ?? 'original';
+
+  let drawW = slot.maxWidth * userScale;
+  let drawH = slot.maxHeight * userScale;
+  if (shape === 'circle') {
+    const circleSize = Math.min(slot.maxWidth, slot.maxHeight * 1.45) * userScale;
+    drawW = circleSize;
+    drawH = circleSize;
+  }
+
+  let anchorCenterX = slot.x + slot.maxWidth / 2;
+  if (slot.align === 'left') {
+    anchorCenterX = slot.x + drawW / 2;
+  } else if (slot.align === 'right') {
+    anchorCenterX = slot.x + slot.maxWidth - drawW / 2;
+  }
+  const anchorCenterY = slot.y + slot.maxHeight / 2;
+
+  const logoCenterX = anchorCenterX + (logoSettings.x / 100) * (W * 0.45);
+  const logoCenterY = anchorCenterY + (logoSettings.y / 100) * (H * 0.45);
+  const lx = logoCenterX - drawW / 2;
+  const ly = logoCenterY - drawH / 2;
+
+  const badgeMode: LogoBadgeStyle = logoSettings.badgeStyle ?? 'none';
+  const showBadge =
+    badgeMode === 'white' ||
+    badgeMode === 'frosted' ||
+    (badgeMode === 'auto' && slot.surfaceIsDark);
+
+  ctx.save();
+
+  // Optional shape/badge background clip or backdrop
+  if (showBadge || shape !== 'original') {
+    const radius =
+      shape === 'circle'
+        ? Math.max(drawW, drawH) / 2
+        : shape === 'square'
+          ? 0
+          : shape === 'rounded'
+            ? Math.round(Math.min(drawW, drawH) * 0.22)
+            : Math.round(Math.min(drawW, drawH) / 2);
+
+    if (showBadge) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.22)';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle =
+        badgeMode === 'frosted'
+          ? slot.surfaceIsDark
+            ? 'rgba(255, 255, 255, 0.34)'
+            : 'rgba(241, 245, 249, 0.85)'
+          : 'rgba(255, 255, 255, 0.97)';
+      if (shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(logoCenterX, logoCenterY, drawW / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        drawRoundedRect(ctx, lx, ly, drawW, drawH, radius);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    if (shape !== 'original') {
+      if (shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(logoCenterX, logoCenterY, drawW / 2, 0, Math.PI * 2);
+        ctx.clip();
+      } else {
+        drawRoundedRect(ctx, lx, ly, drawW, drawH, radius);
+        ctx.clip();
+      }
+    }
+  }
+
+  // Canonical design space mapping -> scales cleanly with userScale
+  const sx = drawW / slot.maxWidth;
+  const sy = drawH / slot.maxHeight;
+  const u = Math.min(sx, sy);
+
+  if (styleType === 'portal-sylhetvoice-blue' || styleType === 'portal-sylhetvoice-dark') {
+    // Crisp white pill (left-flush when at default x=0 & original shape)
+    const isFlushLeft = shape === 'original' && Math.abs(logoSettings.x) < 4 && !showBadge;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.22)';
+    ctx.shadowBlur = 12 * u;
+    ctx.shadowOffsetY = 4 * u;
+    ctx.fillStyle = '#ffffff';
+    if (isFlushLeft) {
+      const r = drawH / 2;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(lx + drawW - r, ly);
+      ctx.arc(lx + drawW - r, ly + r, r, -Math.PI / 2, Math.PI / 2);
+      ctx.lineTo(lx, ly + drawH);
+      ctx.closePath();
+      ctx.fill();
+    } else if (shape === 'original' && !showBadge) {
+      drawRoundedRect(ctx, lx, ly, drawW, drawH, drawH / 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // SylhetVOICE typography
+    const sFont = 34 * u;
+    const vFont = 58 * u;
+    const oFont = 44 * u;
+
+    ctx.save();
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `700 ${sFont.toFixed(1)}px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+    const wSyl = ctx.measureText('Sylhet').width;
+    ctx.font = `800 ${vFont.toFixed(1)}px Georgia, serif`;
+    const wV = ctx.measureText('V').width;
+    ctx.font = `800 ${oFont.toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    const wOice = ctx.measureText('OICE').width;
+
+    const totalTextW = wSyl + wV * 0.9 + wOice;
+    const startX = logoCenterX - totalTextW / 2 - 4 * u;
+    const baseLineY = logoCenterY + 15 * u;
+
+    ctx.fillStyle = '#25539e';
+    ctx.font = `700 ${sFont.toFixed(1)}px 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText('Sylhet', startX, baseLineY);
+
+    ctx.fillStyle = '#2a3648';
+    ctx.font = `800 ${vFont.toFixed(1)}px Georgia, serif`;
+    ctx.fillText('V', startX + wSyl - 2 * u, baseLineY + 2 * u);
+
+    ctx.font = `800 ${oFont.toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    ctx.fillText('OICE', startX + wSyl + wV * 0.86, baseLineY);
+    ctx.restore();
+  } else if (styleType === 'portal-protidiner-cream' || styleType === 'portal-protidiner-split') {
+    const showTick = styleType === 'portal-protidiner-cream';
+    const mainFont = 38 * u;
+    const tagFont = 13.5 * u;
+    const tickR = showTick ? 15 * u : 0;
+
+    ctx.save();
+    ctx.font = `700 ${mainFont.toFixed(1)}px 'Hind Siliguri', 'Kalpurush', sans-serif`;
+    const wLeft = ctx.measureText('প্রতিদিনের').width;
+    const wRight = ctx.measureText('সিলেট').width;
+    const gap = 2 * u;
+    const totalW = wLeft + gap + wRight + (showTick ? tickR * 2 + 10 * u : 0);
+
+    const startX =
+      slot.align === 'right'
+        ? lx + drawW - totalW
+        : logoCenterX - totalW / 2;
+    const mainY = logoCenterY - 4 * u;
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#0d9448';
+    ctx.fillText('প্রতিদিনের', startX, mainY);
+
+    ctx.fillStyle = '#dc2626';
+    ctx.fillText('সিলেট', startX + wLeft + gap, mainY);
+
+    if (showTick) {
+      drawVerifiedBlueCheck(
+        ctx,
+        startX + wLeft + gap + wRight + 10 * u + tickR,
+        mainY - 1 * u,
+        tickR
+      );
+    }
+
+    ctx.fillStyle = '#dc2626';
+    ctx.font = `500 ${tagFont.toFixed(1)}px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText('খবরের সাথে সবসময়...', startX + wLeft + gap + wRight, mainY + 24 * u);
+    ctx.restore();
+  } else if (styleType === 'portal-protidiner-black') {
+    const mainFont = 36 * u;
+    const tickR = 14 * u;
+
+    ctx.save();
+    ctx.font = `700 ${mainFont.toFixed(1)}px Georgia, 'Noto Serif Bengali', serif`;
+    const wText = ctx.measureText('Protidiner Sylhet').width;
+    const totalW = wText + 12 * u + tickR * 2;
+    const startX = lx + drawW - totalW;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Protidiner Sylhet', startX, logoCenterY);
+    drawVerifiedBlueCheck(ctx, startX + wText + 10 * u + tickR, logoCenterY - 1 * u, tickR);
+    ctx.restore();
+  } else if (styleType === 'portal-emjanews') {
+    ctx.save();
+    const globeR = 30 * u;
+    const globeX = lx + 86 * u;
+    const globeY = logoCenterY - 18 * u;
+
+    ctx.strokeStyle = 'rgba(14, 60, 135, 0.34)';
+    ctx.lineWidth = Math.max(1.2, 1.8 * u);
+    ctx.beginPath();
+    ctx.arc(globeX, globeY, globeR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(globeX, globeY, globeR * 0.48, globeR, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(globeX - globeR, globeY);
+    ctx.lineTo(globeX + globeR, globeY);
+    ctx.moveTo(globeX - globeR * 0.85, globeY - globeR * 0.45);
+    ctx.lineTo(globeX + globeR * 0.85, globeY - globeR * 0.45);
+    ctx.stroke();
+
+    const emjaFont = 40 * u;
+    ctx.font = `800 ${emjaFont.toFixed(1)}px Georgia, 'Plus Jakarta Sans', serif`;
+    const wEmja = ctx.measureText('EMJA ').width;
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#0a357a';
+    ctx.fillText('EMJA', lx + 6 * u, logoCenterY + 6 * u);
+
+    ctx.fillStyle = '#1d70e8';
+    ctx.font = `italic 800 ${(emjaFont * 0.96).toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    ctx.fillText('NEWS', lx + 6 * u + wEmja * 0.92, logoCenterY + 6 * u);
+
+    ctx.fillStyle = '#1e293b';
+    ctx.font = `600 ${(13.5 * u).toFixed(1)}px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+    ctx.fillText('ঘটনা • ইতিহাস • সংলাপ', lx + 6 * u, logoCenterY + 34 * u);
+    ctx.restore();
+  } else if (styleType === 'portal-sylhetview') {
+    ctx.save();
+    // Vertical crimson 24.com strip on right side
+    const stripW = 24 * u;
+    const stripX = lx + drawW - stripW - 4 * u;
+    const stripY = ly + 6 * u;
+    const stripH = drawH - 12 * u;
+
+    ctx.fillStyle = '#b91c1c';
+    ctx.fillRect(stripX, stripY, stripW, stripH);
+
+    ctx.save();
+    ctx.translate(stripX + stripW / 2, stripY + stripH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 ${(17 * u).toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('24.com', 0, 1 * u);
+    ctx.restore();
+
+    // Top tagline + cartoon arch eyes dome
+    ctx.fillStyle = '#111827';
+    ctx.font = `600 ${(12 * u).toFixed(1)}px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('সংবাদের সাথে সারাক্ষণ', lx + 42 * u, ly + 15 * u);
+
+    // Cute dome eyes mark
+    const domeX = lx + 206 * u;
+    const domeY = ly + 22 * u;
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = Math.max(1.4, 2 * u);
+    ctx.beginPath();
+    ctx.arc(domeX, domeY, 22 * u, Math.PI, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(domeX - 8 * u, domeY - 4 * u, 5 * u, 0, Math.PI * 2);
+    ctx.arc(domeX + 8 * u, domeY - 4 * u, 5 * u, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#111827';
+    ctx.beginPath();
+    ctx.arc(domeX - 8 * u, domeY - 4 * u, 2 * u, 0, Math.PI * 2);
+    ctx.arc(domeX + 8 * u, domeY - 4 * u, 2 * u, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Red rounded square icon + bold "sylhetview"
+    const iconSize = 26 * u;
+    const iconY = ly + 36 * u;
+    ctx.fillStyle = '#dc2626';
+    drawRoundedRect(ctx, lx + 4 * u, iconY, iconSize, iconSize, 5 * u);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.5, 2 * u);
+    ctx.beginPath();
+    ctx.arc(lx + 4 * u + iconSize / 2, iconY + iconSize / 2, iconSize * 0.28, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#111827';
+    ctx.font = `800 ${(35 * u).toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('sylhetview', lx + 38 * u, iconY + iconSize / 2 + 2 * u);
+
+    ctx.fillStyle = '#4b5563';
+    ctx.font = `500 ${(9.5 * u).toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText('Govt. Reg No. 122', stripX - 6 * u, ly + drawH - 10 * u);
+    ctx.restore();
+  } else if (styleType === 'portal-sylhettoday') {
+    // Glowing soft white radial oval pill
+    if (!showBadge) {
+      ctx.save();
+      const glow = ctx.createRadialGradient(
+        logoCenterX,
+        logoCenterY,
+        drawW * 0.12,
+        logoCenterX,
+        logoCenterY,
+        drawW * 0.56
+      );
+      glow.addColorStop(0, 'rgba(255, 255, 255, 0.99)');
+      glow.addColorStop(0.65, 'rgba(255, 255, 255, 0.94)');
+      glow.addColorStop(0.88, 'rgba(255, 255, 255, 0.45)');
+      glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.ellipse(logoCenterX, logoCenterY, drawW * 0.56, drawH * 0.54, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.save();
+    const cR = 20 * u;
+    const textFont = 27 * u;
+    ctx.font = `700 ${textFont.toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    const wSyl = ctx.measureText('sylhettoday').width;
+    const w24 = ctx.measureText('24').width;
+    const totalW = cR * 2 + 10 * u + wSyl + w24;
+    const startX = logoCenterX - totalW / 2;
+    const cy = logoCenterY - 5 * u;
+
+    // Sky-blue circle + white "st"
+    ctx.beginPath();
+    ctx.arc(startX + cR, cy, cR, 0, Math.PI * 2);
+    ctx.fillStyle = '#0284c7';
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 ${(20 * u).toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('st', startX + cR, cy + 1 * u);
+
+    // "sylhettoday24"
+    const tx = startX + cR * 2 + 10 * u;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#111827';
+    ctx.font = `700 ${textFont.toFixed(1)}px 'Plus Jakarta Sans', sans-serif`;
+    ctx.fillText('sylhettoday', tx, cy);
+
+    ctx.fillStyle = '#0284c7';
+    ctx.fillText('24', tx + wSyl, cy);
+
+    // Subtitle underneath
+    ctx.fillStyle = '#334155';
+    ctx.font = `500 ${(10.5 * u).toFixed(1)}px 'Kalpurush', 'Hind Siliguri', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('সংবাদ • মতামত • বিশ্লেষণ', tx + (wSyl + w24) / 2, cy + 22 * u);
+    ctx.restore();
+  }
+
+  ctx.restore();
+  return { x: lx, y: ly, width: drawW, height: drawH };
 }
 
 export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
@@ -3146,15 +4211,8 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     };
   }
 
-  // 3. Unified Brand Logo Pass (Official Shyamal Sylhet Logo OR Custom Uploaded Logo)
+  // 3. Unified Brand Logo Pass (Custom Uploaded Logo OR Portal Signature Logo OR Official Shyamal Sylhet Logo)
   let logoHitBox: RectBox | null = null;
-  const activeLogoImg =
-    logoSettings.dataUrl && logoImg && logoImg.naturalWidth > 0
-      ? logoImg
-      : !logoSettings.hideDefaultBrand && officialLogoImg && officialLogoImg.naturalWidth > 0
-        ? officialLogoImg
-        : null;
-
   if (psdOverlayDrawsBakedLogo && !logoSettings.hideDefaultBrand) {
     // Baked SVG already rendered the default official logo at exact coordinates
     logoHitBox = {
@@ -3163,8 +4221,12 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
       width: brandSlot.maxWidth,
       height: brandSlot.maxHeight,
     };
-  } else if (activeLogoImg) {
-    logoHitBox = drawUnifiedBrandLogo(ctx, W, H, brandSlot, activeLogoImg, logoSettings);
+  } else if (hasCustomLogo && logoImg) {
+    logoHitBox = drawUnifiedBrandLogo(ctx, W, H, brandSlot, logoImg, logoSettings);
+  } else if (!logoSettings.hideDefaultBrand && isBuiltInPortalLogoTemplate(template.styleType)) {
+    logoHitBox = drawPortalDefaultLogo(ctx, W, H, brandSlot, template.styleType, logoSettings);
+  } else if (!logoSettings.hideDefaultBrand && officialLogoImg && officialLogoImg.naturalWidth > 0) {
+    logoHitBox = drawUnifiedBrandLogo(ctx, W, H, brandSlot, officialLogoImg, logoSettings);
   }
 
   // 4. Custom Floating Text Layers (Added via Pencil click-to-place or Quick Text Add)

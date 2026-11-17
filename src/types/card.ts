@@ -95,7 +95,15 @@ export type ProceduralStyleType =
   | 'portal-dhakapost'
   | 'paper-kalerkantho'
   | 'paper-jugantor'
-  | 'paper-ittefaq';
+  | 'paper-ittefaq'
+  | 'portal-sylhetvoice-blue'
+  | 'portal-protidiner-cream'
+  | 'portal-sylhetvoice-dark'
+  | 'portal-protidiner-black'
+  | 'portal-protidiner-split'
+  | 'portal-emjanews'
+  | 'portal-sylhetview'
+  | 'portal-sylhettoday';
 
 export type TemplateCategory =
   | 'সব'

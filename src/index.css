@@ -12,9 +12,30 @@
     url('/fonts/Kalpurush.ttf') format('truetype');
 }
 
+:root {
+  --bg: #F7F8FA;
+  --surface: #FFFFFF;
+  --border: #E5E7EB;
+  --text: #0F172A;
+  --muted: #64748B;
+  --primary: #4F46E5;
+  --primary-hover: #4338CA;
+  --highlight: #F59E0B;
+  --success: #10B981;
+  --danger: #EF4444;
+}
+
+html.dark {
+  --bg: #0B0F19;
+  --surface: #111827;
+  --border: #1F2937;
+  --text: #F1F5F9;
+  --muted: #94A3B8;
+}
+
 @layer base {
   html {
-    font-family: 'Hind Siliguri', 'Noto Sans Bengali', 'Plus Jakarta Sans', sans-serif;
+    font-family: 'Hind Siliguri', 'Plus Jakarta Sans', 'Noto Sans Bengali', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: clip;
@@ -26,23 +47,54 @@
     min-height: 100vh;
     overflow-x: clip;
     max-width: 100%;
-    background: linear-gradient(135deg, #fcf0e0 0%, #fcf6ee 45%, #fbf6f0 100%);
-    color: #1e293b;
+    background-color: #F7F8FA;
+    color: #0F172A;
+    font-size: 15px;
     transition: background-color 150ms ease, color 150ms ease;
   }
 
   html.dark body {
-    background: linear-gradient(135deg, #0b1120 0%, #0f172a 50%, #131c31 100%);
-    color: #f1f5f9;
+    background-color: #0B0F19;
+    color: #F1F5F9;
   }
 }
 
-/* Custom Range Input matching UI design */
+/* Dotted Canva-style canvas stage */
+.canvas-stage-dots {
+  background-color: #F1F5F9;
+  background-image: radial-gradient(#CBD5E1 1.15px, transparent 1.15px);
+  background-size: 20px 20px;
+}
+
+html.dark .canvas-stage-dots {
+  background-color: #0B0F19;
+  background-image: radial-gradient(#1E293B 1.15px, transparent 1.15px);
+  background-size: 20px 20px;
+}
+
+/* Subtle Hero grid wash */
+.hero-grid-bg {
+  background-image:
+    radial-gradient(ellipse 70% 50% at 75% 20%, rgba(79, 70, 229, 0.08), transparent 65%),
+    linear-gradient(to right, rgba(229, 231, 235, 0.55) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(229, 231, 235, 0.55) 1px, transparent 1px);
+  background-size: 100% 100%, 48px 48px, 48px 48px;
+}
+
+html.dark .hero-grid-bg {
+  background-image:
+    radial-gradient(ellipse 70% 50% at 75% 20%, rgba(79, 70, 229, 0.16), transparent 65%),
+    linear-gradient(to right, rgba(31, 41, 55, 0.55) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(31, 41, 55, 0.55) 1px, transparent 1px);
+  background-size: 100% 100%, 48px 48px, 48px 48px;
+}
+
+/* Custom Range Input matching Indigo design system */
 input[type='range'].card-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 8px;
+  height: 6px;
   border-radius: 9999px;
   outline: none;
   cursor: pointer;
@@ -51,29 +103,30 @@ input[type='range'].card-slider {
 input[type='range'].card-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 9999px;
-  background: #faab3f;
-  border: 2px solid #e08e1b;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  background: #FFFFFF;
+  border: 2.5px solid #4F46E5;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
   cursor: pointer;
-  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms ease;
 }
 
 input[type='range'].card-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.12);
+  transform: scale(1.14);
+  border-color: #4338CA;
 }
 
 input[type='range'].card-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 9999px;
-  background: #faab3f;
-  border: 2px solid #e08e1b;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  background: #FFFFFF;
+  border: 2.5px solid #4F46E5;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
   cursor: pointer;
-  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms ease;
 }
 
 /* Clean color swatch input */
@@ -81,8 +134,8 @@ input[type='color'].swatch-picker {
   -webkit-appearance: none;
   appearance: none;
   padding: 0;
-  border: 1px solid #7c7c7c;
-  border-radius: 3px;
+  border: 1px solid #CBD5E1;
+  border-radius: 9999px;
   cursor: pointer;
   overflow: hidden;
 }
@@ -93,8 +146,10 @@ input[type='color'].swatch-picker::-webkit-color-swatch-wrapper {
 
 input[type='color'].swatch-picker::-webkit-color-swatch {
   border: none;
+  border-radius: 9999px;
 }
 
 input[type='color'].swatch-picker::-moz-color-swatch {
   border: none;
+  border-radius: 9999px;
 }

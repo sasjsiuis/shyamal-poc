@@ -29,6 +29,7 @@ import type {
   TemplateOverride,
 } from '../../types/card';
 import { toBengaliDigits } from '../../utils/projectStorage';
+import { EditableNumberBadge } from '../EditableNumberBadge';
 import { RangeSlider } from '../RangeSlider';
 import { TemplateGallery } from '../TemplateGallery';
 import type { EditorTabId } from './EditorSidebar';
@@ -154,16 +155,27 @@ interface EditorRightPanelProps {
 
 const SliderHeader: React.FC<{
   label: string;
-  valueLabel: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  suffix?: string;
+  onChange: (val: number) => void;
   onReset: () => void;
   resetTitle?: string;
-}> = ({ label, valueLabel, onReset, resetTitle = 'ডিফল্টে ফেরত' }) => (
+}> = ({ label, value, min, max, step = 1, suffix = '', onChange, onReset, resetTitle = 'ডিফল্টে ফেরত' }) => (
   <div className="mb-1.5 flex items-center justify-between gap-2">
     <span className="text-[13px] font-medium text-[#0F172A] dark:text-slate-200">{label}</span>
     <div className="flex items-center gap-1.5">
-      <span className="rounded-md border border-[#E5E7EB] bg-[#F7F8FA] px-2 py-0.5 text-[12px] font-semibold text-[#0F172A] tabular-nums dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200">
-        {valueLabel}
-      </span>
+      <EditableNumberBadge
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        suffix={suffix}
+        onChange={onChange}
+        ariaLabel={label}
+      />
       <button
         type="button"
         onClick={onReset}
@@ -435,7 +447,13 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
                 <div className="space-y-2.5 rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] p-2.5 dark:border-[#1F2937] dark:bg-[#111827]">
                   <SliderHeader
                     label="সাব-হেডিং সাইজ"
-                    valueLabel={`${toBengaliDigits(props.subheading.fontSizePercent)}%`}
+                    value={props.subheading.fontSizePercent}
+                    min={60}
+                    max={180}
+                    suffix="%"
+                    onChange={(fontSizePercent) =>
+                      props.onChangeSubheading((prev) => ({ ...prev, fontSizePercent }))
+                    }
                     onReset={() =>
                       props.onChangeSubheading((prev) => ({ ...prev, fontSizePercent: 100 }))
                     }
@@ -546,7 +564,15 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
 
                   <SliderHeader
                     label="সাইজ"
-                    valueLabel={`${toBengaliDigits(item.fontSize)}px`}
+                    value={item.fontSize}
+                    min={16}
+                    max={110}
+                    suffix="px"
+                    onChange={(fontSize) =>
+                      props.onChangeCustomTexts((prev) =>
+                        prev.map((c) => (c.id === item.id ? { ...c, fontSize } : c))
+                      )
+                    }
                     onReset={() =>
                       props.onChangeCustomTexts((prev) =>
                         prev.map((c) => (c.id === item.id ? { ...c, fontSize: 32 } : c))
@@ -875,7 +901,11 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
           <div>
             <SliderHeader
               label="লেখার সাইজ"
-              valueLabel={`${toBengaliDigits(props.fontSizePercent)}%`}
+              value={props.fontSizePercent}
+              min={50}
+              max={180}
+              suffix="%"
+              onChange={props.onChangeFontSizePercent}
               onReset={() => props.onChangeFontSizePercent(100)}
             />
             <RangeSlider
@@ -892,7 +922,11 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
           <div>
             <SliderHeader
               label="লাইন স্পেসিং"
-              valueLabel={`${toBengaliDigits(props.lineGapPercent)}%`}
+              value={props.lineGapPercent}
+              min={60}
+              max={160}
+              suffix="%"
+              onChange={props.onChangeLineGapPercent}
               onReset={() => props.onChangeLineGapPercent(92)}
             />
             <RangeSlider
@@ -905,8 +939,8 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
             />
           </div>
 
-          {/* Text Position (3x3 Grid) + Text Shadow Toggle */}
-          <div className="grid grid-cols-[120px_1fr] items-start gap-4">
+          {/* Text Position (3x3 Grid + Editable Numeric X/Y) + Text Shadow Toggle */}
+          <div className="grid grid-cols-[128px_1fr] items-start gap-4">
             <div>
               <p className="mb-1.5 text-[12.5px] font-medium text-[#0F172A] dark:text-slate-200">
                 লেখার অবস্থান
@@ -935,6 +969,30 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
                     </button>
                   );
                 })}
+              </div>
+              <div className="mt-1.5 grid grid-cols-2 gap-1">
+                <div className="flex items-center justify-between gap-1 text-[10.5px] text-[#64748B]">
+                  <span>X</span>
+                  <EditableNumberBadge
+                    value={Math.round(props.textOffsetX * 100)}
+                    min={-45}
+                    max={45}
+                    onChange={(val) => props.onChangeTextOffset(val / 100, props.textOffsetY)}
+                    ariaLabel="লেখা ডানে-বামে X"
+                    className="!min-w-[38px] !px-1 !text-[11px]"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-1 text-[10.5px] text-[#64748B]">
+                  <span>Y</span>
+                  <EditableNumberBadge
+                    value={Math.round(props.textOffsetY * 100)}
+                    min={-45}
+                    max={45}
+                    onChange={(val) => props.onChangeTextOffset(props.textOffsetX, val / 100)}
+                    ariaLabel="লেখা উপরে-নিচে Y"
+                    className="!min-w-[38px] !px-1 !text-[11px]"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1073,7 +1131,11 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
           <div>
             <SliderHeader
               label="জুম"
-              valueLabel={`${toBengaliDigits(Math.round(props.photoZoom * 100))}%`}
+              value={Math.round(props.photoZoom * 100)}
+              min={100}
+              max={300}
+              suffix="%"
+              onChange={(val) => props.onChangePhotoZoom(val / 100)}
               onReset={() => props.onChangePhotoZoom(1)}
             />
             <RangeSlider
@@ -1089,7 +1151,10 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
           <div>
             <SliderHeader
               label="ডানে-বামে (X)"
-              valueLabel={`${toBengaliDigits(props.photoPanX)}`}
+              value={props.photoPanX}
+              min={-100}
+              max={100}
+              onChange={props.onChangePhotoPanX}
               onReset={() => props.onChangePhotoPanX(0)}
             />
             <RangeSlider
@@ -1105,7 +1170,10 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
           <div>
             <SliderHeader
               label="উপরে-নিচে (Y)"
-              valueLabel={`${toBengaliDigits(props.photoPanY)}`}
+              value={props.photoPanY}
+              min={-100}
+              max={100}
+              onChange={props.onChangePhotoPanY}
               onReset={() => props.onChangePhotoPanY(0)}
             />
             <RangeSlider
@@ -1286,7 +1354,11 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
               <div>
                 <SliderHeader
                   label="লোগোর সাইজ"
-                  valueLabel={`${toBengaliDigits(props.logoSettings.scale)}%`}
+                  value={props.logoSettings.scale}
+                  min={25}
+                  max={200}
+                  suffix="%"
+                  onChange={(scale) => props.onChangeLogoSettings((p) => ({ ...p, scale }))}
                   onReset={() => props.onChangeLogoSettings((p) => ({ ...p, scale: 100 }))}
                 />
                 <RangeSlider
@@ -1302,7 +1374,10 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
               <div>
                 <SliderHeader
                   label="লোগো ডানে-বামে (X)"
-                  valueLabel={`${toBengaliDigits(props.logoSettings.x)}`}
+                  value={props.logoSettings.x}
+                  min={-200}
+                  max={200}
+                  onChange={(x) => props.onChangeLogoSettings((p) => ({ ...p, x }))}
                   onReset={() => props.onChangeLogoSettings((p) => ({ ...p, x: 0 }))}
                 />
                 <RangeSlider
@@ -1317,7 +1392,10 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
               <div>
                 <SliderHeader
                   label="লোগো উপরে-নিচে (Y)"
-                  valueLabel={`${toBengaliDigits(props.logoSettings.y)}`}
+                  value={props.logoSettings.y}
+                  min={-200}
+                  max={200}
+                  onChange={(y) => props.onChangeLogoSettings((p) => ({ ...p, y }))}
                   onReset={() => props.onChangeLogoSettings((p) => ({ ...p, y: 0 }))}
                 />
                 <RangeSlider
@@ -1416,7 +1494,11 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
           <div>
             <SliderHeader
               label="কোয়ালিটি"
-              valueLabel={`${toBengaliDigits(props.exportQuality)}%`}
+              value={props.exportQuality}
+              min={60}
+              max={100}
+              suffix="%"
+              onChange={props.onChangeExportQuality}
               onReset={() => props.onChangeExportQuality(96)}
             />
             <RangeSlider

@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
-  Maximize2,
-  Minimize2,
+  Hand,
   Pencil,
   Redo2,
+  RotateCcw,
   Trash2,
   Undo2,
   X,
@@ -12,6 +12,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { EditableNumberBadge } from '../components/EditableNumberBadge';
 import { LogoEditorModal } from '../components/LogoEditorModal';
 import { RangeSlider } from '../components/RangeSlider';
 import { useToast } from '../components/Toast';
@@ -97,12 +98,40 @@ export const EditorPage: React.FC = () => {
   const isHydratedRef = useRef<boolean>(false);
   const limitToastShownRef = useRef<boolean>(false);
 
-  // Navigation / Drawer state
+  // Navigation / Drawer & Stage Pan/Zoom state
   const [desktopTab, setDesktopTab] = useState<EditorTabId>('text');
   const [mobileSheetTab, setMobileSheetTab] = useState<EditorTabId | null>('text');
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [canvasZoomMode, setCanvasZoomMode] = useState<'fit' | 'custom'>('fit');
   const [canvasZoomPercent, setCanvasZoomPercent] = useState<number>(100);
+  const [stagePanX, setStagePanX] = useState<number>(0);
+  const [stagePanY, setStagePanY] = useState<number>(0);
+  const [isSpaceHeld, setIsSpaceHeld] = useState<boolean>(false);
+  const [isHandMode, setIsHandMode] = useState<boolean>(false);
+  const [isPanningStage, setIsPanningStage] = useState<boolean>(false);
+  const stageMainRef = useRef<HTMLElement | null>(null);
+  const stagePanRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    initPanX: number;
+    initPanY: number;
+  }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    initPanX: 0,
+    initPanY: 0,
+  });
+  const pinchRef = useRef<{
+    active: boolean;
+    initialDist: number;
+    initialZoom: number;
+  }>({
+    active: false,
+    initialDist: 0,
+    initialZoom: 100,
+  });
 
   // URL & Auto-extraction state
   const [newsUrl, setNewsUrl] = useState('');
@@ -1252,10 +1281,33 @@ export const EditorPage: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [projectEditorState, projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keyboard shortcuts: Ctrl+Z / Ctrl+Y / Ctrl+S
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Y / Ctrl+S + Spacebar Stage Pan
   useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable
+      );
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.isComposing) return;
+
+      if (e.code === 'Space' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (!isTypingTarget(e.target)) {
+          e.preventDefault();
+          if (document.activeElement instanceof HTMLElement && document.activeElement.tagName === 'BUTTON') {
+            document.activeElement.blur();
+          }
+          setIsSpaceHeld(true);
+        }
+        return;
+      }
+
       const mod = e.ctrlKey || e.metaKey;
       if (!mod || e.altKey) return;
       const key = e.key.toLowerCase();
@@ -1277,9 +1329,83 @@ export const EditorPage: React.FC = () => {
         }
       }
     };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpaceHeld(false);
+        if (stagePanRef.current.active) {
+          stagePanRef.current.active = false;
+          setIsPanningStage(false);
+        }
+      }
+    };
+
+    const onBlur = () => {
+      setIsSpaceHeld(false);
+      stagePanRef.current.active = false;
+      setIsPanningStage(false);
+    };
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
   }, [performUndo, performRedo, performSaveToIndexedDB]);
+
+  // Global mouse move/up for smooth stage panning even outside <main>
+  useEffect(() => {
+    const onWindowMouseMove = (e: MouseEvent) => {
+      if (!stagePanRef.current.active) return;
+      const dx = e.clientX - stagePanRef.current.startX;
+      const dy = e.clientY - stagePanRef.current.startY;
+      setStagePanX(Math.max(-1200, Math.min(1200, Math.round(stagePanRef.current.initPanX + dx))));
+      setStagePanY(Math.max(-1200, Math.min(1200, Math.round(stagePanRef.current.initPanY + dy))));
+    };
+    const onWindowMouseUp = () => {
+      if (stagePanRef.current.active) {
+        stagePanRef.current.active = false;
+        setIsPanningStage(false);
+      }
+    };
+    window.addEventListener('mousemove', onWindowMouseMove);
+    window.addEventListener('mouseup', onWindowMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onWindowMouseMove);
+      window.removeEventListener('mouseup', onWindowMouseUp);
+    };
+  }, []);
+
+  // Mouse wheel & trackpad pinch-to-zoom directly on <main>
+  useEffect(() => {
+    const mainEl = stageMainRef.current;
+    if (!mainEl) return;
+    const onWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('form, input, textarea, [data-no-stage-wheel="true"]')) {
+        return;
+      }
+      e.preventDefault();
+      const stepDelta = e.ctrlKey ? -e.deltaY * 0.8 : -e.deltaY * 0.18;
+      if (Math.abs(stepDelta) < 0.2) return;
+      setCanvasZoomMode('custom');
+      setCanvasZoomPercent((prev) =>
+        Math.max(30, Math.min(250, Math.round(prev + stepDelta)))
+      );
+    };
+    mainEl.addEventListener('wheel', onWheel, { passive: false });
+    return () => mainEl.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const resetStageView = useCallback(() => {
+    setStagePanX(0);
+    setStagePanY(0);
+    setCanvasZoomMode('fit');
+    setCanvasZoomPercent(100);
+  }, []);
 
   // Render Canvas Preview
   useEffect(() => {
@@ -2055,12 +2181,111 @@ export const EditorPage: React.FC = () => {
 
         {/* Center Dotted Canvas Stage */}
         <main
-          className={`canvas-stage-dots relative flex flex-1 flex-col items-center justify-center overflow-auto px-3 py-3 sm:p-5 ${
+          ref={stageMainRef}
+          onMouseDown={(e) => {
+            if (document.activeElement instanceof HTMLElement && document.activeElement.tagName === 'BUTTON') {
+              document.activeElement.blur();
+            }
+            const target = e.target as HTMLElement | null;
+            const isEmptyStage =
+              e.target === e.currentTarget || target?.dataset.stageArea === 'true';
+            if ((isSpaceHeld || isHandMode || isEmptyStage) && e.button === 0) {
+              e.preventDefault();
+              stagePanRef.current = {
+                active: true,
+                startX: e.clientX,
+                startY: e.clientY,
+                initPanX: stagePanX,
+                initPanY: stagePanY,
+              };
+              setIsPanningStage(true);
+            }
+          }}
+          onDoubleClick={(e) => {
+            const target = e.target as HTMLElement | null;
+            if (e.target === e.currentTarget || target?.dataset.stageArea === 'true') {
+              resetStageView();
+            }
+          }}
+          onTouchStart={(e) => {
+            if (e.touches.length === 2) {
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              pinchRef.current = {
+                active: true,
+                initialDist: Math.hypot(dx, dy),
+                initialZoom: canvasZoomPercent,
+              };
+              stagePanRef.current.active = false;
+              setIsPanningStage(false);
+              return;
+            }
+            const target = e.target as HTMLElement | null;
+            const isEmptyStage =
+              e.target === e.currentTarget || target?.dataset.stageArea === 'true';
+            if (e.touches.length === 1 && (isHandMode || isEmptyStage)) {
+              stagePanRef.current = {
+                active: true,
+                startX: e.touches[0].clientX,
+                startY: e.touches[0].clientY,
+                initPanX: stagePanX,
+                initPanY: stagePanY,
+              };
+              setIsPanningStage(true);
+            }
+          }}
+          onTouchMove={(e) => {
+            if (pinchRef.current.active && e.touches.length === 2) {
+              e.preventDefault();
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              const dist = Math.hypot(dx, dy);
+              if (pinchRef.current.initialDist > 10) {
+                const nextZoom = Math.max(
+                  30,
+                  Math.min(
+                    250,
+                    Math.round((pinchRef.current.initialZoom * dist) / pinchRef.current.initialDist)
+                  )
+                );
+                setCanvasZoomMode('custom');
+                setCanvasZoomPercent(nextZoom);
+              }
+              return;
+            }
+            if (stagePanRef.current.active && e.touches.length === 1) {
+              e.preventDefault();
+              const dx = e.touches[0].clientX - stagePanRef.current.startX;
+              const dy = e.touches[0].clientY - stagePanRef.current.startY;
+              setStagePanX(
+                Math.max(-1200, Math.min(1200, Math.round(stagePanRef.current.initPanX + dx)))
+              );
+              setStagePanY(
+                Math.max(-1200, Math.min(1200, Math.round(stagePanRef.current.initPanY + dy)))
+              );
+            }
+          }}
+          onTouchEnd={() => {
+            pinchRef.current.active = false;
+            stagePanRef.current.active = false;
+            setIsPanningStage(false);
+          }}
+          className={`canvas-stage-dots relative flex flex-1 flex-col items-center justify-center overflow-hidden px-3 py-3 sm:p-5 ${
             mobileSheetTab ? 'max-md:pb-4' : 'max-md:pb-20'
+          } ${
+            isPanningStage
+              ? 'cursor-grabbing select-none'
+              : isSpaceHeld || isHandMode
+                ? 'cursor-grab select-none'
+                : ''
           }`}
         >
           {/* Floating Canvas Toolbar Pill */}
-          <div className="mb-3 flex flex-wrap items-center justify-center gap-1 rounded-xl border border-[#E5E7EB] bg-white/95 px-2 py-1 text-xs shadow-sm backdrop-blur-xs dark:border-[#1F2937] dark:bg-[#111827]/95">
+          <div
+            data-no-stage-wheel="true"
+            onMouseDown={(e) => e.stopPropagation()}
+            className="relative z-20 mb-3 flex flex-wrap items-center justify-center gap-1 rounded-xl border border-[#E5E7EB] bg-white/95 px-2 py-1 text-xs shadow-sm backdrop-blur-xs dark:border-[#1F2937] dark:bg-[#111827]/95"
+          >
             <button
               type="button"
               onClick={performUndo}
@@ -2082,66 +2307,88 @@ export const EditorPage: React.FC = () => {
               <Redo2 className="h-3.5 w-3.5" />
             </button>
 
-            <span className="mx-1 h-4 w-px bg-[#E5E7EB] dark:bg-[#1F2937]" />
+            <span className="mx-0.5 h-4 w-px bg-[#E5E7EB] dark:bg-[#1F2937]" />
 
-            <span className="px-1.5 text-[11.5px] font-medium text-[#64748B] tabular-nums dark:text-slate-400">
-              {toBengaliDigits(effectiveTemplate.canvasWidth)} ×{' '}
-              {toBengaliDigits(effectiveTemplate.canvasHeight)} px
-            </span>
+            {/* Hand / Space Pan Tool */}
+            <button
+              type="button"
+              onClick={() => setIsHandMode((v) => !v)}
+              title="ডিজাইন ডানে-বামে সরাতে ক্লিক করুন অথবা কীবোর্ডে Space চেপে ধরে টানুন"
+              aria-label="ডিজাইন সরানোর টুল"
+              className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-[11.5px] font-semibold transition-colors ${
+                isHandMode || isSpaceHeld
+                  ? 'bg-[#4F46E5] text-white'
+                  : 'text-[#0F172A] hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-gray-800'
+              }`}
+            >
+              <Hand className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">সরান</span>
+            </button>
 
-            <span className="mx-1 hidden h-4 w-px bg-[#E5E7EB] sm:inline-block dark:bg-[#1F2937]" />
+            <span className="mx-0.5 h-4 w-px bg-[#E5E7EB] dark:bg-[#1F2937]" />
 
-            <div className="hidden items-center gap-0.5 sm:flex">
+            {/* Zoom Controls + Clickable Number Input */}
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => {
                   setCanvasZoomMode('custom');
-                  setCanvasZoomPercent((z) => Math.max(60, z - 10));
+                  setCanvasZoomPercent((z) => Math.max(30, z - 10));
                 }}
-                aria-label="জুম আউট"
+                aria-label="ছোট করুন (Zoom Out)"
+                title="ছোট করুন"
                 className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:hover:bg-gray-800"
               >
                 <ZoomOut className="h-3.5 w-3.5" />
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (canvasZoomMode === 'fit') {
-                    setCanvasZoomMode('custom');
-                    setCanvasZoomPercent(100);
-                  } else {
-                    setCanvasZoomMode('fit');
-                  }
+
+              <EditableNumberBadge
+                value={canvasZoomPercent}
+                min={30}
+                max={250}
+                suffix="%"
+                onChange={(val) => {
+                  setCanvasZoomMode('custom');
+                  setCanvasZoomPercent(val);
                 }}
-                className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-[11.5px] font-semibold text-[#0F172A] hover:bg-slate-100 tabular-nums dark:text-slate-200 dark:hover:bg-gray-800"
-                title="ফিট বনাম ১০০% জুম"
-              >
-                {canvasZoomMode === 'fit' ? (
-                  <>
-                    <Minimize2 className="h-3 w-3 text-[#4F46E5]" />
-                    <span>ফিট</span>
-                  </>
-                ) : (
-                  <>
-                    <Maximize2 className="h-3 w-3 text-[#4F46E5]" />
-                    <span>{toBengaliDigits(canvasZoomPercent)}%</span>
-                  </>
-                )}
-              </button>
+                ariaLabel="প্রিভিউ জুম"
+                className="!h-7 !min-w-[48px]"
+              />
+
               <button
                 type="button"
                 onClick={() => {
                   setCanvasZoomMode('custom');
-                  setCanvasZoomPercent((z) => Math.min(140, z + 10));
+                  setCanvasZoomPercent((z) => Math.min(250, z + 10));
                 }}
-                aria-label="জুম ইন"
+                aria-label="বড় করুন (Zoom In)"
+                title="বড় করুন"
                 className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:hover:bg-gray-800"
               >
                 <ZoomIn className="h-3.5 w-3.5" />
               </button>
+
+              {(canvasZoomMode !== 'fit' || stagePanX !== 0 || stagePanY !== 0) && (
+                <button
+                  type="button"
+                  onClick={resetStageView}
+                  title="মাঝে ও ডিফল্ট সাইজে ফেরান"
+                  className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-[#4F46E5] hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>ফিট</span>
+                </button>
+              )}
             </div>
 
-            <span className="mx-1 h-4 w-px bg-[#E5E7EB] dark:bg-[#1F2937]" />
+            <span className="mx-0.5 hidden h-4 w-px bg-[#E5E7EB] sm:inline-block dark:bg-[#1F2937]" />
+
+            <span className="hidden px-1.5 text-[11.5px] font-medium text-[#64748B] tabular-nums sm:inline dark:text-slate-400">
+              {toBengaliDigits(effectiveTemplate.canvasWidth)} ×{' '}
+              {toBengaliDigits(effectiveTemplate.canvasHeight)} px
+            </span>
+
+            <span className="mx-0.5 h-4 w-px bg-[#E5E7EB] dark:bg-[#1F2937]" />
 
             <button
               type="button"
@@ -2161,52 +2408,60 @@ export const EditorPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Live Canvas Wrapper */}
-          <div className="flex w-full items-center justify-center">
+          {/* Live Canvas Wrapper (Pannable + Zoomable Stage) */}
+          <div
+            data-stage-area="true"
+            className="flex w-full flex-1 items-center justify-center"
+          >
             <div
-              className={`relative overflow-hidden rounded-xl bg-white shadow-[0_12px_36px_rgba(15,23,42,0.12)] transition-shadow dark:shadow-[0_14px_40px_rgba(0,0,0,0.45)] ${
+              className={`relative shrink-0 overflow-hidden rounded-xl bg-white shadow-[0_12px_36px_rgba(15,23,42,0.12)] dark:shadow-[0_14px_40px_rgba(0,0,0,0.45)] ${
                 isPencilTextMode ? 'ring-2 ring-[#4F46E5]' : 'ring-1 ring-black/5 dark:ring-white/10'
-              }`}
-              style={
-                canvasZoomMode === 'fit'
-                  ? {
-                      aspectRatio: aspectRatioStyle,
-                      width: mobileSheetTab
-                        ? 'min(100%, 310px, 36vh)'
-                        : 'min(100%, 520px, calc(100vh - 205px))',
-                      maxWidth: '100%',
-                    }
-                  : {
-                      aspectRatio: aspectRatioStyle,
-                      width: `${Math.round((520 * canvasZoomPercent) / 100)}px`,
-                      maxWidth: '100%',
-                    }
-              }
+              } ${isPanningStage ? 'transition-none' : 'transition-shadow'}`}
+              style={{
+                aspectRatio: aspectRatioStyle,
+                width:
+                  canvasZoomMode === 'fit'
+                    ? mobileSheetTab
+                      ? 'min(100%, 310px, 36vh)'
+                      : 'min(100%, 520px, calc(100vh - 215px))'
+                    : `${Math.round((520 * canvasZoomPercent) / 100)}px`,
+                transform: `translate3d(${stagePanX}px, ${stagePanY}px, 0)`,
+              }}
             >
               <canvas
                 ref={previewCanvasRef}
                 width={effectiveTemplate.canvasWidth}
                 height={effectiveTemplate.canvasHeight}
-                onMouseDown={(e) => startCanvasDrag(e.clientX, e.clientY)}
-                onMouseMove={(e) => moveCanvasDrag(e.clientX, e.clientY)}
+                onMouseDown={(e) => {
+                  if (isSpaceHeld || isHandMode) return;
+                  startCanvasDrag(e.clientX, e.clientY);
+                }}
+                onMouseMove={(e) => {
+                  if (isSpaceHeld || isHandMode || stagePanRef.current.active) return;
+                  moveCanvasDrag(e.clientX, e.clientY);
+                }}
                 onMouseUp={endCanvasDrag}
                 onMouseLeave={endCanvasDrag}
                 onTouchStart={(e) => {
-                  if (e.touches.length === 1) {
-                    startCanvasDrag(e.touches[0].clientX, e.touches[0].clientY);
-                  }
+                  if (isHandMode || e.touches.length !== 1) return;
+                  startCanvasDrag(e.touches[0].clientX, e.touches[0].clientY);
                 }}
                 onTouchMove={(e) => {
-                  if (e.touches.length === 1 && dragRef.current.mode !== 'none') {
+                  if (isHandMode || e.touches.length !== 1) return;
+                  if (dragRef.current.mode !== 'none') {
                     e.preventDefault();
                     moveCanvasDrag(e.touches[0].clientX, e.touches[0].clientY);
                   }
                 }}
                 onTouchEnd={endCanvasDrag}
                 className={`block h-full w-full select-none touch-none ${
-                  isPencilTextMode
-                    ? 'cursor-crosshair'
-                    : 'cursor-grab active:cursor-grabbing'
+                  isPanningStage
+                    ? 'cursor-grabbing'
+                    : isSpaceHeld || isHandMode
+                      ? 'cursor-grab'
+                      : isPencilTextMode
+                        ? 'cursor-crosshair'
+                        : 'cursor-grab active:cursor-grabbing'
                 }`}
               />
 
@@ -2223,8 +2478,10 @@ export const EditorPage: React.FC = () => {
           {/* Inline Floating Text Creator (Pencil Click on Canvas) */}
           {pendingPencilPoint && (
             <form
+              data-no-stage-wheel="true"
+              onMouseDown={(e) => e.stopPropagation()}
               onSubmit={handleCommitPencilText}
-              className="mt-3 w-full max-w-[480px] space-y-2.5 rounded-xl border border-[#4F46E5]/50 bg-white p-3.5 text-xs shadow-lg dark:border-indigo-500/40 dark:bg-[#111827]"
+              className="relative z-20 mt-3 w-full max-w-[480px] space-y-2.5 rounded-xl border border-[#4F46E5]/50 bg-white p-3.5 text-xs shadow-lg dark:border-indigo-500/40 dark:bg-[#111827]"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 font-bold text-[#0F172A] dark:text-slate-100">
@@ -2269,6 +2526,14 @@ export const EditorPage: React.FC = () => {
                       {preset.label}
                     </button>
                   ))}
+                  <EditableNumberBadge
+                    value={pendingPencilSize}
+                    min={16}
+                    max={110}
+                    suffix="px"
+                    onChange={setPendingPencilSize}
+                    ariaLabel="নতুন টেক্সটের সাইজ"
+                  />
                 </div>
 
                 <div className="flex items-center gap-1.5">
@@ -2332,7 +2597,11 @@ export const EditorPage: React.FC = () => {
               const activeItem = customTexts.find((c) => c.id === activeCustomTextId);
               if (!activeItem) return null;
               return (
-                <div className="mt-3 w-full max-w-[480px] space-y-2 rounded-xl border border-[#E5E7EB] bg-white p-3 text-xs shadow-lg dark:border-[#1F2937] dark:bg-[#111827]">
+                <div
+                  data-no-stage-wheel="true"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="relative z-20 mt-3 w-full max-w-[480px] space-y-2 rounded-xl border border-[#E5E7EB] bg-white p-3 text-xs shadow-lg dark:border-[#1F2937] dark:bg-[#111827]"
+                >
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -2369,9 +2638,23 @@ export const EditorPage: React.FC = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-semibold text-[#64748B] tabular-nums dark:text-slate-300">
-                      সাইজ ({toBengaliDigits(activeItem.fontSize)}px)
+                    <span className="text-[11px] font-semibold text-[#64748B] dark:text-slate-300">
+                      সাইজ
                     </span>
+                    <EditableNumberBadge
+                      value={activeItem.fontSize}
+                      min={16}
+                      max={110}
+                      suffix="px"
+                      onChange={(fontSize) =>
+                        setCustomTexts((prev) =>
+                          prev.map((c) =>
+                            c.id === activeItem.id ? { ...c, fontSize } : c
+                          )
+                        )
+                      }
+                      ariaLabel="অতিরিক্ত টেক্সটের সাইজ"
+                    />
                     <div className="min-w-[100px] flex-1">
                       <RangeSlider
                         min={16}
@@ -2494,6 +2777,8 @@ export const EditorPage: React.FC = () => {
             </div>
             <div className="space-y-2 text-[13px]">
               {[
+                { key: 'Space + টানুন', desc: 'প্রিভিউ যেকোনো জায়গায় সরান' },
+                { key: 'মাউস হুইল', desc: 'প্রিভিউ ছোট-বড় করুন (Zoom)' },
                 { key: 'Ctrl + S', desc: 'প্রজেক্ট সেভ করুন' },
                 { key: 'Ctrl + Z', desc: 'পিছনের ধাপে ফিরুন (Undo)' },
                 { key: 'Ctrl + Y', desc: 'পরের ধাপে যান (Redo)' },

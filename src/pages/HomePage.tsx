@@ -4,6 +4,8 @@ import {
   ArrowRight,
   ArrowUpRight,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Image as ImageIcon,
   LayoutGrid,
@@ -19,7 +21,7 @@ import { Footer } from '../components/Footer';
 import { Navbar } from '../components/Navbar';
 import { TemplatePreviewCanvas } from '../components/TemplatePreviewCanvas';
 import { useToast } from '../components/Toast';
-import { ALL_TEMPLATES, PSD_GREEN_TEMPLATE, PSD_MAROON_TEMPLATE } from '../data/templates';
+import { ALL_TEMPLATES, PSD_GREEN_TEMPLATE } from '../data/templates';
 import type { SavedProject } from '../types/project';
 import { sanitizeUrlInput } from '../utils/newsExtractor';
 import {
@@ -40,12 +42,27 @@ const POPULAR_TEMPLATE_IDS = [
   'portal-sylhettoday',
 ];
 
+const HERO_SHOWCASE_IDS = [
+  'psd-green',
+  'psd-maroon',
+  'brk-crimson-live',
+  'portal-sylhetvoice-blue',
+  'portal-protidiner-cream',
+  'nat-royal-navy',
+  'portal-sylhetvoice-dark',
+  'int-global-cobalt',
+  'portal-emjanews',
+  'portal-sylhetview',
+];
+
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [heroUrl, setHeroUrl] = useState('');
   const [recentProjects, setRecentProjects] = useState<SavedProject[]>([]);
   const [creatingId, setCreatingId] = useState<string | null>(null);
+  const [activeHeroSlide, setActiveHeroSlide] = useState(0);
+  const [isHeroHovered, setIsHeroHovered] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -56,6 +73,29 @@ export const HomePage: React.FC = () => {
       active = false;
     };
   }, []);
+
+  const heroShowcaseTemplates = useMemo(() => {
+    const picked = HERO_SHOWCASE_IDS.map((id) => ALL_TEMPLATES.find((t) => t.id === id)).filter(
+      (t): t is NonNullable<typeof t> => Boolean(t)
+    );
+    const seen = new Set(picked.map((t) => t.id));
+    for (const tpl of ALL_TEMPLATES) {
+      if (picked.length >= 10) break;
+      if (!seen.has(tpl.id)) {
+        seen.add(tpl.id);
+        picked.push(tpl);
+      }
+    }
+    return picked.slice(0, 10);
+  }, []);
+
+  useEffect(() => {
+    if (isHeroHovered || heroShowcaseTemplates.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setActiveHeroSlide((prev) => (prev + 1) % heroShowcaseTemplates.length);
+    }, 2800);
+    return () => window.clearInterval(timer);
+  }, [isHeroHovered, heroShowcaseTemplates.length]);
 
   const popularTemplates = useMemo(() => {
     const picked = POPULAR_TEMPLATE_IDS.map((id) => ALL_TEMPLATES.find((t) => t.id === id)).filter(
@@ -175,25 +215,128 @@ export const HomePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Right: Layered Sample Card Mockup */}
-            <div className="relative mx-auto w-full max-w-[430px] lg:ml-auto">
-              {/* Background rotated card */}
+            {/* Right: Animated 10-Card Sliding Showcase */}
+            <div
+              className="relative mx-auto w-full max-w-[430px] lg:ml-auto"
+              onMouseEnter={() => setIsHeroHovered(true)}
+              onMouseLeave={() => setIsHeroHovered(false)}
+            >
+              {/* Background rotated preview of the next upcoming card */}
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute -right-4 top-6 hidden h-[88%] w-[88%] rotate-6 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white opacity-90 shadow-lg sm:block dark:border-[#1F2937] dark:bg-[#111827]"
+                className="pointer-events-none absolute -right-4 top-6 hidden h-[86%] w-[86%] rotate-6 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white opacity-90 shadow-lg transition-transform duration-500 sm:block dark:border-[#1F2937] dark:bg-[#111827]"
               >
-                <TemplatePreviewCanvas template={PSD_MAROON_TEMPLATE} size={360} eager />
+                {heroShowcaseTemplates.length > 0 && (
+                  <TemplatePreviewCanvas
+                    key={
+                      heroShowcaseTemplates[
+                        (activeHeroSlide + 1) % heroShowcaseTemplates.length
+                      ].id
+                    }
+                    template={
+                      heroShowcaseTemplates[
+                        (activeHeroSlide + 1) % heroShowcaseTemplates.length
+                      ]
+                    }
+                    size={360}
+                    eager
+                  />
+                )}
               </div>
 
-              {/* Foreground primary sample card */}
+              {/* Foreground animated 10-card slider */}
               <div className="relative z-10 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white p-2.5 shadow-xl dark:border-[#1F2937] dark:bg-[#111827]">
-                <div className="overflow-hidden rounded-lg">
-                  <TemplatePreviewCanvas template={PSD_GREEN_TEMPLATE} size={460} eager />
+                <div className="relative overflow-hidden rounded-lg">
+                  <div
+                    className="flex transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform"
+                    style={{ transform: `translateX(-${activeHeroSlide * 100}%)` }}
+                  >
+                    {heroShowcaseTemplates.map((tpl) => (
+                      <div
+                        key={tpl.id}
+                        onClick={() => handleOpenTemplateEditor(tpl.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleOpenTemplateEditor(tpl.id);
+                          }
+                        }}
+                        title={`${tpl.name} — ক্লিক করে এডিট করুন`}
+                        className="group relative w-full shrink-0 cursor-pointer"
+                      >
+                        <TemplatePreviewCanvas template={tpl} size={460} eager />
+                        <span className="pointer-events-none absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-md bg-[#0F172A]/75 px-2.5 py-1 text-[11px] font-semibold text-white opacity-0 backdrop-blur-xs transition-opacity duration-200 group-hover:opacity-100">
+                          <Pencil className="h-3 w-3" />
+                          <span>এডিট করুন</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Prev / Next Mini Controls */}
+                  <button
+                    type="button"
+                    aria-label="আগের কার্ড"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveHeroSlide(
+                        (prev) =>
+                          (prev - 1 + heroShowcaseTemplates.length) % heroShowcaseTemplates.length
+                      );
+                    }}
+                    className="absolute left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/30 bg-[#0F172A]/55 text-white backdrop-blur-xs transition-all hover:bg-[#4F46E5]"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="পরের কার্ড"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveHeroSlide((prev) => (prev + 1) % heroShowcaseTemplates.length);
+                    }}
+                    className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/30 bg-[#0F172A]/55 text-white backdrop-blur-xs transition-all hover:bg-[#4F46E5]"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Slide Indicator Bar (10 cards) */}
+                <div className="mt-2.5 flex items-center justify-between gap-2 px-1">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="rounded bg-[#EEF2FF] px-1.5 py-0.5 text-[11px] font-bold text-[#4F46E5] tabular-nums dark:bg-indigo-950/70 dark:text-indigo-300">
+                      {toBengaliDigits(activeHeroSlide + 1)}/{toBengaliDigits(heroShowcaseTemplates.length)}
+                    </span>
+                    <span className="truncate text-[12px] font-semibold text-[#0F172A] dark:text-slate-200">
+                      {heroShowcaseTemplates[activeHeroSlide]?.name}
+                    </span>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1">
+                    {heroShowcaseTemplates.map((tpl, idx) => {
+                      const active = idx === activeHeroSlide;
+                      return (
+                        <button
+                          key={tpl.id}
+                          type="button"
+                          aria-label={`${tpl.name} (${toBengaliDigits(idx + 1)})`}
+                          onClick={() => setActiveHeroSlide(idx)}
+                          className={`h-1.5 cursor-pointer rounded-full transition-all duration-300 ${
+                            active
+                              ? 'w-4 bg-[#4F46E5]'
+                              : 'w-1.5 bg-slate-300 hover:bg-slate-400 dark:bg-gray-700'
+                          }`}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
               {/* Floating badge: Headline auto fetched */}
-              <div className="absolute -left-3 bottom-16 z-20 hidden items-center gap-2.5 rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-2.5 shadow-md sm:flex dark:border-[#1F2937] dark:bg-[#111827]">
+              <div className="pointer-events-none absolute -left-3 bottom-16 z-20 hidden items-center gap-2.5 rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-2.5 shadow-md sm:flex dark:border-[#1F2937] dark:bg-[#111827]">
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60">
                   <Sparkles className="h-4 w-4" />
                 </span>
@@ -208,7 +351,7 @@ export const HomePage: React.FC = () => {
               </div>
 
               {/* Floating badge: Download ready */}
-              <div className="absolute -bottom-4 right-3 z-20 hidden items-center gap-2.5 rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-2.5 shadow-md sm:flex dark:border-[#1F2937] dark:bg-[#111827]">
+              <div className="pointer-events-none absolute -bottom-4 right-3 z-20 hidden items-center gap-2.5 rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-2.5 shadow-md sm:flex dark:border-[#1F2937] dark:bg-[#111827]">
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-[#4F46E5] dark:bg-indigo-950/60 dark:text-indigo-400">
                   <Download className="h-4 w-4" />
                 </span>

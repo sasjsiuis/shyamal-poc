@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
+  ClipboardPaste,
   Hand,
+  ImagePlus,
   Pencil,
   Redo2,
   RotateCcw,
@@ -23,6 +25,7 @@ import { ALL_TEMPLATES, BUILTIN_FONTS, PSD_GREEN_TEMPLATE, PSD_MAROON_TEMPLATE }
 import type {
   CustomTextItem,
   ExportFormat,
+  ExtraImageLayer,
   FontOption,
   HighlightRange,
   LineMode,
@@ -35,6 +38,11 @@ import type {
 } from '../types/card';
 import type { ProjectEditorState } from '../types/project';
 import { buildHighlightMask, renderNewsCard } from '../utils/canvasRenderer';
+import {
+  moveLayerStep as moveLayerStepHelper,
+  normalizeLayerOrder,
+  reorderVisualTopDown,
+} from '../utils/layerUtils';
 import {
   extractTitleFromSlugClient,
   extractYouTubeThumbClient,
@@ -234,6 +242,16 @@ export const EditorPage: React.FC = () => {
   const [subheading, setSubheading] = useState<SubheadingSettings>(DEFAULT_SUBHEADING);
   const [customTexts, setCustomTexts] = useState<CustomTextItem[]>([]);
   const [activeCustomTextId, setActiveCustomTextId] = useState<string | null>(null);
+  const [extraImages, setExtraImages] = useState<ExtraImageLayer[]>([]);
+  const [extraImageEls, setExtraImageEls] = useState<Record<string, HTMLImageElement>>({});
+  const [layerOrder, setLayerOrder] = useState<string[] | undefined>(undefined);
+  const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
+  const [layerOpacity, setLayerOpacity] = useState<Record<string, number>>({});
+  const [layerLocks, setLayerLocks] = useState<Record<string, boolean>>({});
+  const [selectedLayerId, setSelectedLayerId] = useState<string>('headline');
+  const [isStageDragOver, setIsStageDragOver] = useState<boolean>(false);
+  const stageDragDepthRef = useRef<number>(0);
+
   const [isPencilTextMode, setIsPencilTextMode] = useState(false);
   const [pendingPencilPoint, setPendingPencilPoint] = useState<{ x: number; y: number } | null>(
     null
@@ -245,6 +263,7 @@ export const EditorPage: React.FC = () => {
 
   // File input refs
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const extraImageInputRef = useRef<HTMLInputElement | null>(null);
   const fontInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const customFrameInputRef = useRef<HTMLInputElement | null>(null);
@@ -263,8 +282,9 @@ export const EditorPage: React.FC = () => {
   });
 
   const dragRef = useRef<{
-    mode: 'none' | 'text' | 'photo' | 'logo' | 'subheading' | 'custom-text';
+    mode: 'none' | 'text' | 'photo' | 'logo' | 'subheading' | 'custom-text' | 'extra-image';
     customTextId: string | null;
+    extraImageId: string | null;
     startClientX: number;
     startClientY: number;
     initialTextX: number;
@@ -277,10 +297,13 @@ export const EditorPage: React.FC = () => {
     initialSubY: number;
     initialCustomX: number;
     initialCustomY: number;
+    initialExtraImgX: number;
+    initialExtraImgY: number;
     moved: boolean;
   }>({
     mode: 'none',
     customTextId: null,
+    extraImageId: null,
     startClientX: 0,
     startClientY: 0,
     initialTextX: 0,
@@ -293,6 +316,8 @@ export const EditorPage: React.FC = () => {
     initialSubY: 0,
     initialCustomX: 0.5,
     initialCustomY: 0.5,
+    initialExtraImgX: 0.5,
+    initialExtraImgY: 0.5,
     moved: false,
   });
 
@@ -328,6 +353,19 @@ export const EditorPage: React.FC = () => {
     const effectiveWebsiteUrl =
       ov?.websiteUrl !== undefined ? ov.websiteUrl : selectedTemplate.websiteUrl;
 
+    const effectivePalette = ov?.palette
+      ? {
+          bgPrimary: ov.palette.bgPrimary ?? selectedTemplate.palette?.bgPrimary ?? '#0f172a',
+          bgSecondary: ov.palette.bgSecondary ?? selectedTemplate.palette?.bgSecondary ?? '#1e293b',
+          accent: ov.palette.accent ?? selectedTemplate.palette?.accent ?? '#ef4444',
+          footerBg: ov.palette.footerBg ?? selectedTemplate.palette?.footerBg ?? '#ffffff',
+          footerText: ov.palette.footerText ?? selectedTemplate.palette?.footerText ?? '#0f172a',
+          badgeBg: ov.palette.badgeBg ?? selectedTemplate.palette?.badgeBg ?? '#f59e0b',
+          badgeText: ov.palette.badgeText ?? selectedTemplate.palette?.badgeText ?? '#111827',
+          borderColor: ov.palette.borderColor ?? selectedTemplate.palette?.borderColor ?? '#e2e8f0',
+        }
+      : selectedTemplate.palette;
+
     return {
       ...selectedTemplate,
       name: effectiveName,
@@ -335,8 +373,20 @@ export const EditorPage: React.FC = () => {
       kickerText: effectiveKicker,
       footerCtaText: effectiveFooterCta,
       websiteUrl: effectiveWebsiteUrl,
+      palette: effectivePalette,
     };
   }, [selectedTemplate, templateOverrides, categoryNames]);
+
+  const dateTextOverride = templateOverrides[selectedTemplate.id]?.dateText ?? '';
+
+  const resolvedLayerOrder = useMemo(
+    () => normalizeLayerOrder(layerOrder, selectedTemplate.styleType, customTexts, extraImages),
+    [layerOrder, selectedTemplate.styleType, customTexts, extraImages]
+  );
+
+  const activeExtraImageId = selectedLayerId.startsWith('image:')
+    ? selectedLayerId.slice(6)
+    : null;
 
   const handleRenameCategory = useCallback(
     (categoryKey: Exclude<TemplateCategory, 'সব'>, newName: string) => {
@@ -593,6 +643,25 @@ export const EditorPage: React.FC = () => {
     };
   }, []);
 
+  // Preload extra image layers
+  useEffect(() => {
+    let cancelled = false;
+    for (const item of extraImages) {
+      const existing = extraImageEls[item.id];
+      if (existing && existing.src === item.dataUrl) continue;
+      const img = new Image();
+      img.onload = () => {
+        if (!cancelled) {
+          setExtraImageEls((prev) => ({ ...prev, [item.id]: img }));
+        }
+      };
+      img.src = item.dataUrl;
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [extraImages]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Select Template inside Editor
   const handleSelectTemplate = useCallback(
     (nextTpl: TemplateConfig) => {
@@ -662,6 +731,11 @@ export const EditorPage: React.FC = () => {
     logoSettings: LogoSettings;
     subheading: SubheadingSettings;
     customTexts: CustomTextItem[];
+    extraImages: ExtraImageLayer[];
+    layerOrder: string[] | undefined;
+    layerVisibility: Record<string, boolean>;
+    layerOpacity: Record<string, number>;
+    layerLocks: Record<string, boolean>;
     templateOverrides: Record<string, TemplateOverride>;
   };
 
@@ -687,6 +761,11 @@ export const EditorPage: React.FC = () => {
       logoSettings,
       subheading,
       customTexts,
+      extraImages,
+      layerOrder,
+      layerVisibility,
+      layerOpacity,
+      layerLocks,
       templateOverrides,
     }),
     [
@@ -710,6 +789,11 @@ export const EditorPage: React.FC = () => {
       logoSettings,
       subheading,
       customTexts,
+      extraImages,
+      layerOrder,
+      layerVisibility,
+      layerOpacity,
+      layerLocks,
       templateOverrides,
     ]
   );
@@ -752,6 +836,11 @@ export const EditorPage: React.FC = () => {
     (a.logoSettings.shape ?? 'original') === (b.logoSettings.shape ?? 'original') &&
     JSON.stringify(a.subheading) === JSON.stringify(b.subheading) &&
     JSON.stringify(a.customTexts) === JSON.stringify(b.customTexts) &&
+    JSON.stringify(a.extraImages) === JSON.stringify(b.extraImages) &&
+    JSON.stringify(a.layerOrder) === JSON.stringify(b.layerOrder) &&
+    JSON.stringify(a.layerVisibility) === JSON.stringify(b.layerVisibility) &&
+    JSON.stringify(a.layerOpacity) === JSON.stringify(b.layerOpacity) &&
+    JSON.stringify(a.layerLocks) === JSON.stringify(b.layerLocks) &&
     JSON.stringify(a.highlights) === JSON.stringify(b.highlights) &&
     JSON.stringify(a.templateOverrides) === JSON.stringify(b.templateOverrides);
 
@@ -780,6 +869,11 @@ export const EditorPage: React.FC = () => {
     setLogoSettings(snap.logoSettings);
     setSubheading(snap.subheading);
     setCustomTexts(snap.customTexts);
+    setExtraImages(snap.extraImages);
+    setLayerOrder(snap.layerOrder);
+    setLayerVisibility(snap.layerVisibility);
+    setLayerOpacity(snap.layerOpacity);
+    setLayerLocks(snap.layerLocks);
     setTemplateOverrides(snap.templateOverrides);
     window.setTimeout(() => {
       isApplyingHistoryRef.current = false;
@@ -1018,6 +1112,11 @@ export const EditorPage: React.FC = () => {
       setLogoSettings(st.logoSettings || initialDefaults.logoSettings);
       setSubheading(st.subheading || DEFAULT_SUBHEADING);
       setCustomTexts(st.customTexts || []);
+      setExtraImages(st.extraImages || []);
+      setLayerOrder(st.layerOrder);
+      setLayerVisibility(st.layerVisibility || {});
+      setLayerOpacity(st.layerOpacity || {});
+      setLayerLocks(st.layerLocks || {});
       setExportFormat(st.exportFormat || 'png');
       setExportQuality(st.exportQuality ?? 96);
       if (st.templateOverrides && Object.keys(st.templateOverrides).length > 0) {
@@ -1166,6 +1265,12 @@ export const EditorPage: React.FC = () => {
     setHighlightColor(selectedTemplate.defaultHighlightColor);
     setSubheading(DEFAULT_SUBHEADING);
     setCustomTexts([]);
+    setExtraImages([]);
+    setLayerOrder(undefined);
+    setLayerVisibility({});
+    setLayerOpacity({});
+    setLayerLocks({});
+    setSelectedLayerId('headline');
     setActiveCustomTextId(null);
     setPendingPencilPoint(null);
     setIsPencilTextMode(false);
@@ -1196,6 +1301,11 @@ export const EditorPage: React.FC = () => {
       logoSettings,
       subheading,
       customTexts,
+      extraImages,
+      layerOrder,
+      layerVisibility,
+      layerOpacity,
+      layerLocks,
       exportFormat,
       exportQuality,
       templateOverrides: templateOverrides[selectedTemplate.id]
@@ -1224,6 +1334,11 @@ export const EditorPage: React.FC = () => {
       logoSettings,
       subheading,
       customTexts,
+      extraImages,
+      layerOrder,
+      layerVisibility,
+      layerOpacity,
+      layerLocks,
       exportFormat,
       exportQuality,
       templateOverrides,
@@ -1447,6 +1562,13 @@ export const EditorPage: React.FC = () => {
       subheading,
       customTexts,
       activeCustomTextId,
+      extraImages,
+      extraImageEls,
+      activeExtraImageId,
+      layerOrder: resolvedLayerOrder,
+      layerVisibility,
+      layerOpacity,
+      dateTextOverride,
       isExport: false,
       snapState,
     });
@@ -1476,6 +1598,13 @@ export const EditorPage: React.FC = () => {
     subheading,
     customTexts,
     activeCustomTextId,
+    extraImages,
+    extraImageEls,
+    activeExtraImageId,
+    resolvedLayerOrder,
+    layerVisibility,
+    layerOpacity,
+    dateTextOverride,
     snapState,
     fontsLoadedTick,
   ]);
@@ -1561,6 +1690,160 @@ export const EditorPage: React.FC = () => {
     };
     reader.readAsDataURL(file);
   };
+
+  // Add Extra Image Layer (used by Drag & Drop, Paste Ctrl+V, and Layers Tab "+ ছবি লেয়ার")
+  const addExtraImageFromBlob = useCallback(
+    (blob: Blob, nameHint?: string, dropPoint?: { x: number; y: number }) => {
+      if (blob.size > 25 * 1024 * 1024) {
+        showToast('ছবিটি ২৫ মেগাবাইটের চেয়ে বড়, ছোট ছবি দিন', 'warning');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result !== 'string') return;
+        const rawUrl = reader.result;
+        const img = new Image();
+        img.onload = () => {
+          const nw = img.naturalWidth || 800;
+          const nh = img.naturalHeight || 800;
+          const maxDim = 1600;
+          let finalDataUrl = rawUrl;
+
+          if (nw > maxDim || nh > maxDim) {
+            const scale = maxDim / Math.max(nw, nh);
+            const tw = Math.max(1, Math.round(nw * scale));
+            const th = Math.max(1, Math.round(nh * scale));
+            const c = document.createElement('canvas');
+            c.width = tw;
+            c.height = th;
+            const cctx = c.getContext('2d');
+            if (cctx) {
+              cctx.drawImage(img, 0, 0, tw, th);
+              const isPngOrWebp = /png|webp|svg/i.test(blob.type);
+              finalDataUrl = isPngOrWebp
+                ? c.toDataURL('image/png')
+                : c.toDataURL('image/jpeg', 0.9);
+            }
+          }
+
+          commitHistoryNow();
+          const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          const count = extraImages.length + 1;
+          const cleanName =
+            nameHint?.replace(/\.[^/.]+$/, '').trim().slice(0, 28) ||
+            `ছবি লেয়ার ${toBengaliDigits(count)}`;
+          const newLayer: ExtraImageLayer = {
+            id,
+            name: cleanName,
+            dataUrl: finalDataUrl,
+            x: dropPoint ? Math.max(0.12, Math.min(0.88, dropPoint.x)) : 0.5,
+            y: dropPoint ? Math.max(0.12, Math.min(0.88, dropPoint.y)) : 0.48,
+            widthPercent: 42,
+            aspectRatio: nw / Math.max(1, nh),
+            rotation: 0,
+            opacity: 100,
+            borderRadius: 0,
+            borderWidth: 0,
+            borderColor: '#ffffff',
+            shadow: false,
+          };
+
+          setExtraImages((prev) => [...prev, newLayer]);
+          setLayerOrder((prev) => [
+            ...normalizeLayerOrder(prev, selectedTemplate.styleType, customTexts, extraImages),
+            `image:${id}`,
+          ]);
+          setSelectedLayerId(`image:${id}`);
+          setActiveCustomTextId(null);
+          setDesktopTab('layers');
+          showToast(`"${cleanName}" লেয়ার হিসেবে যোগ হয়েছে ✓`, 'success');
+        };
+        img.src = rawUrl;
+      };
+      reader.readAsDataURL(blob);
+    },
+    [commitHistoryNow, customTexts, extraImages, selectedTemplate.styleType, showToast]
+  );
+
+  const handleExtraImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith('image/')) {
+        addExtraImageFromBlob(file, file.name);
+      }
+    });
+    e.target.value = '';
+  };
+
+  // Global Paste Image Listener (works whenever editor panel / canvas is clicked & Ctrl+V pressed)
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable
+      );
+    };
+
+    const onWindowPaste = (e: ClipboardEvent) => {
+      if (isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
+      const cd = e.clipboardData;
+      if (!cd) return;
+
+      let handled = false;
+      if (cd.items) {
+        for (let i = 0; i < cd.items.length; i++) {
+          const item = cd.items[i];
+          if (item.kind === 'file' && item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+              e.preventDefault();
+              addExtraImageFromBlob(file, 'পেস্ট করা ছবি');
+              handled = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!handled && cd.files && cd.files.length > 0) {
+        const imgFile = Array.from(cd.files).find((f) => f.type.startsWith('image/'));
+        if (imgFile) {
+          e.preventDefault();
+          addExtraImageFromBlob(imgFile, imgFile.name || 'পেস্ট করা ছবি');
+        }
+      }
+    };
+
+    window.addEventListener('paste', onWindowPaste);
+    return () => window.removeEventListener('paste', onWindowPaste);
+  }, [addExtraImageFromBlob]);
+
+  const handlePasteFromClipboardButton = useCallback(async () => {
+    stageMainRef.current?.focus({ preventScroll: true });
+    if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+      showToast('কীবোর্ডে Ctrl + V চেপে কপি করা ছবি পেস্ট করুন', 'info');
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          addExtraImageFromBlob(blob, 'পেস্ট করা ছবি');
+          return;
+        }
+      }
+      showToast('ক্লিপবোর্ডে কোনো ছবি পাওয়া যায়নি। আগে একটি ছবি কপি করুন।', 'warning');
+    } catch {
+      showToast('কীবোর্ডে Ctrl + V চেপে কপি করা ছবি পেস্ট করুন', 'info');
+    }
+  }, [addExtraImageFromBlob, showToast]);
 
   // Safe Custom Frame PNG Upload
   const handleCustomFrameUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1782,46 +2065,90 @@ export const EditorPage: React.FC = () => {
       return;
     }
 
-    let mode: 'none' | 'text' | 'photo' | 'logo' | 'subheading' | 'custom-text' = 'none';
+    let mode:
+      | 'none'
+      | 'text'
+      | 'photo'
+      | 'logo'
+      | 'subheading'
+      | 'custom-text'
+      | 'extra-image' = 'none';
     let hitCustomId: string | null = null;
     let hitCustomItem: CustomTextItem | undefined;
+    let hitExtraImageId: string | null = null;
+    let hitExtraImageItem: ExtraImageLayer | undefined;
+    let hitLayerId: string | null = null;
 
-    for (let i = metrics.customTextHitBoxes.length - 1; i >= 0; i--) {
-      const entry = metrics.customTextHitBoxes[i];
-      if (pointInRect(pt.x, pt.y, entry.box)) {
-        hitCustomId = entry.id;
-        hitCustomItem = customTexts.find((c) => c.id === entry.id);
-        mode = 'custom-text';
+    // Hit test layers strictly from top-most visible layer downwards
+    for (let i = resolvedLayerOrder.length - 1; i >= 0; i--) {
+      const lid = resolvedLayerOrder[i];
+      if (layerVisibility[lid] === false) continue;
+
+      if (lid.startsWith('image:')) {
+        const imgId = lid.slice(6);
+        const entry = metrics.extraImageHitBoxes.find((e) => e.id === imgId);
+        if (entry && pointInRect(pt.x, pt.y, entry.box)) {
+          hitExtraImageId = imgId;
+          hitExtraImageItem = extraImages.find((x) => x.id === imgId);
+          hitLayerId = lid;
+          mode = 'extra-image';
+          break;
+        }
+      } else if (lid.startsWith('text:')) {
+        const txtId = lid.slice(5);
+        const entry = metrics.customTextHitBoxes.find((e) => e.id === txtId);
+        if (entry && pointInRect(pt.x, pt.y, entry.box)) {
+          hitCustomId = txtId;
+          hitCustomItem = customTexts.find((c) => c.id === txtId);
+          hitLayerId = lid;
+          mode = 'custom-text';
+          break;
+        }
+      } else if (lid === 'subheading' && metrics.subheadingHitBox && pointInRect(pt.x, pt.y, metrics.subheadingHitBox)) {
+        hitLayerId = 'subheading';
+        mode = 'subheading';
+        break;
+      } else if (lid === 'logo' && metrics.logoHitBox && pointInRect(pt.x, pt.y, metrics.logoHitBox)) {
+        hitLayerId = 'logo';
+        mode = 'logo';
+        break;
+      } else if (lid === 'headline' && headline.trim() && pointInRect(pt.x, pt.y, metrics.textHitBox)) {
+        hitLayerId = 'headline';
+        mode = 'text';
+        break;
+      } else if (lid === 'photo' && pointInRect(pt.x, pt.y, metrics.photoHitBox)) {
+        hitLayerId = 'photo';
+        mode = 'photo';
         break;
       }
     }
 
-    if (mode === 'none' && metrics.subheadingHitBox && pointInRect(pt.x, pt.y, metrics.subheadingHitBox)) {
-      mode = 'subheading';
-      setActiveCustomTextId(null);
-    } else if (mode === 'none' && metrics.logoHitBox && pointInRect(pt.x, pt.y, metrics.logoHitBox)) {
-      mode = 'logo';
-      setActiveCustomTextId(null);
-    } else if (mode === 'none' && headline.trim() && pointInRect(pt.x, pt.y, metrics.textHitBox)) {
+    if (mode === 'none' && headline.trim() && layerVisibility['headline'] !== false) {
+      hitLayerId = 'headline';
       mode = 'text';
-      setActiveCustomTextId(null);
-    } else if (mode === 'none' && pointInRect(pt.x, pt.y, metrics.photoHitBox)) {
-      mode = 'photo';
-      setActiveCustomTextId(null);
-    } else if (mode === 'none' && headline.trim()) {
-      mode = 'text';
-      setActiveCustomTextId(null);
+    }
+
+    if (hitLayerId) {
+      setSelectedLayerId(hitLayerId);
     }
 
     if (mode === 'custom-text' && hitCustomId) {
       setActiveCustomTextId(hitCustomId);
+    } else {
+      setActiveCustomTextId(null);
     }
 
     if (mode === 'none') return;
 
+    if (hitLayerId && layerLocks[hitLayerId]) {
+      showToast('এই লেয়ারটি লক করা আছে (লেয়ার মেনু থেকে আনলক করুন)', 'info', 2200);
+      return;
+    }
+
     dragRef.current = {
       mode,
       customTextId: hitCustomId,
+      extraImageId: hitExtraImageId,
       startClientX: clientX,
       startClientY: clientY,
       initialTextX: textOffsetX,
@@ -1834,6 +2161,8 @@ export const EditorPage: React.FC = () => {
       initialSubY: subheading.offsetY,
       initialCustomX: hitCustomItem?.x ?? 0.5,
       initialCustomY: hitCustomItem?.y ?? 0.5,
+      initialExtraImgX: hitExtraImageItem?.x ?? 0.5,
+      initialExtraImgY: hitExtraImageItem?.y ?? 0.5,
       moved: false,
     };
   };
@@ -1875,6 +2204,13 @@ export const EditorPage: React.FC = () => {
       const nextY = Math.max(0.03, Math.min(0.97, st.initialCustomY + dyNorm));
       const targetId = st.customTextId;
       setCustomTexts((prev) =>
+        prev.map((item) => (item.id === targetId ? { ...item, x: nextX, y: nextY } : item))
+      );
+    } else if (st.mode === 'extra-image' && st.extraImageId) {
+      const nextX = Math.max(0.02, Math.min(0.98, st.initialExtraImgX + dxNorm));
+      const nextY = Math.max(0.02, Math.min(0.98, st.initialExtraImgY + dyNorm));
+      const targetId = st.extraImageId;
+      setExtraImages((prev) =>
         prev.map((item) => (item.id === targetId ? { ...item, x: nextX, y: nextY } : item))
       );
     } else if (st.mode === 'photo' && photoImg) {
@@ -1934,6 +2270,12 @@ export const EditorPage: React.FC = () => {
       logoSettings,
       subheading,
       customTexts,
+      extraImages,
+      extraImageEls,
+      layerOrder: resolvedLayerOrder,
+      layerVisibility,
+      layerOpacity,
+      dateTextOverride,
       isExport: true,
     });
 
@@ -2100,6 +2442,101 @@ export const EditorPage: React.FC = () => {
     onChangeExportQuality: setExportQuality,
     onDownload: handleDownloadCard,
     downloadDone,
+    // Layers Controls
+    resolvedLayerOrder,
+    selectedLayerId,
+    onSelectLayer: (layerId: string) => {
+      setSelectedLayerId(layerId);
+      if (layerId.startsWith('text:')) {
+        setActiveCustomTextId(layerId.slice(5));
+      } else {
+        setActiveCustomTextId(null);
+      }
+    },
+    layerVisibility,
+    onToggleLayerVisibility: (layerId: string) => {
+      commitHistoryNow();
+      setLayerVisibility((prev) => ({
+        ...prev,
+        [layerId]: prev[layerId] === false,
+      }));
+    },
+    layerOpacity,
+    onChangeLayerOpacity: (layerId: string, opacity: number) => {
+      setLayerOpacity((prev) => ({
+        ...prev,
+        [layerId]: Math.max(0, Math.min(100, opacity)),
+      }));
+    },
+    layerLocks,
+    onToggleLayerLock: (layerId: string) => {
+      setLayerLocks((prev) => ({
+        ...prev,
+        [layerId]: !prev[layerId],
+      }));
+    },
+    onMoveLayerStep: (layerId: string, direction: 'up' | 'down') => {
+      commitHistoryNow();
+      setLayerOrder((prev) => {
+        const base = normalizeLayerOrder(
+          prev,
+          selectedTemplate.styleType,
+          customTexts,
+          extraImages
+        );
+        return moveLayerStepHelper(base, layerId, direction);
+      });
+    },
+    onReorderVisualLayers: (fromVisualIdx: number, toVisualIdx: number) => {
+      commitHistoryNow();
+      setLayerOrder((prev) => {
+        const base = normalizeLayerOrder(
+          prev,
+          selectedTemplate.styleType,
+          customTexts,
+          extraImages
+        );
+        return reorderVisualTopDown(base, fromVisualIdx, toVisualIdx);
+      });
+    },
+    onResetLayerSystem: () => {
+      commitHistoryNow();
+      setLayerOrder(undefined);
+      setLayerVisibility({});
+      setLayerOpacity({});
+      setLayerLocks({});
+    },
+    onDeleteCustomText: (id: string) => {
+      commitHistoryNow();
+      setCustomTexts((prev) => prev.filter((c) => c.id !== id));
+      if (activeCustomTextId === id) setActiveCustomTextId(null);
+      if (selectedLayerId === `text:${id}`) setSelectedLayerId('headline');
+    },
+    extraImages,
+    onChangeExtraImages: setExtraImages,
+    onDeleteExtraImage: (id: string) => {
+      commitHistoryNow();
+      setExtraImages((prev) => prev.filter((img) => img.id !== id));
+      if (selectedLayerId === `image:${id}`) setSelectedLayerId('headline');
+    },
+    onTriggerAddExtraImage: () => extraImageInputRef.current?.click(),
+    onPromoteExtraImageToMain: (id: string) => {
+      const target = extraImages.find((img) => img.id === id);
+      if (!target) return;
+      commitHistoryNow();
+      setPhotoZoom(1);
+      setPhotoPanX(0);
+      setPhotoPanY(0);
+      setPhotoSrc(target.dataUrl);
+      setExtraImages((prev) => prev.filter((img) => img.id !== id));
+      setSelectedLayerId('photo');
+      showToast('ছবিটি মূল ছবি হিসেবে সেট করা হয়েছে ✓', 'success');
+    },
+    dateText: dateTextOverride,
+    onSwitchToTemplateTab: () => {
+      setDesktopTab('template');
+      setMobileSheetTab('template');
+    },
   };
 
   const aspectRatioStyle = `${effectiveTemplate.canvasWidth} / ${effectiveTemplate.canvasHeight}`;
@@ -2112,6 +2549,14 @@ export const EditorPage: React.FC = () => {
         type="file"
         accept="image/*"
         onChange={handlePhotoUpload}
+        className="hidden"
+      />
+      <input
+        ref={extraImageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handleExtraImageUpload}
         className="hidden"
       />
       <input
@@ -2182,11 +2627,76 @@ export const EditorPage: React.FC = () => {
         {/* Center Dotted Canvas Stage */}
         <main
           ref={stageMainRef}
+          tabIndex={-1}
+          onDragEnter={(e) => {
+            if (e.dataTransfer.types.includes('Files')) {
+              e.preventDefault();
+              stageDragDepthRef.current += 1;
+              setIsStageDragOver(true);
+            }
+          }}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes('Files')) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+              if (!isStageDragOver) setIsStageDragOver(true);
+            }
+          }}
+          onDragLeave={(e) => {
+            if (e.dataTransfer.types.includes('Files')) {
+              stageDragDepthRef.current = Math.max(0, stageDragDepthRef.current - 1);
+              if (stageDragDepthRef.current === 0 || !e.currentTarget.contains(e.relatedTarget as Node)) {
+                stageDragDepthRef.current = 0;
+                setIsStageDragOver(false);
+              }
+            }
+          }}
+          onDrop={(e) => {
+            if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+            e.preventDefault();
+            stageDragDepthRef.current = 0;
+            setIsStageDragOver(false);
+            const canvas = previewCanvasRef.current;
+            let dropPoint: { x: number; y: number } | undefined;
+            if (canvas) {
+              const rect = canvas.getBoundingClientRect();
+              if (
+                e.clientX >= rect.left &&
+                e.clientX <= rect.right &&
+                e.clientY >= rect.top &&
+                e.clientY <= rect.bottom
+              ) {
+                dropPoint = {
+                  x: (e.clientX - rect.left) / Math.max(1, rect.width),
+                  y: (e.clientY - rect.top) / Math.max(1, rect.height),
+                };
+              }
+            }
+            const files = Array.from(e.dataTransfer.files).filter((f) =>
+              f.type.startsWith('image/')
+            );
+            if (files.length === 0) {
+              showToast('শুধুমাত্র ছবি ফাইল ড্রপ করুন', 'warning');
+              return;
+            }
+            files.forEach((f, idx) => {
+              const offsetPt = dropPoint
+                ? { x: Math.min(0.88, dropPoint.x + idx * 0.04), y: Math.min(0.88, dropPoint.y + idx * 0.04) }
+                : undefined;
+              addExtraImageFromBlob(f, f.name, offsetPt);
+            });
+          }}
           onMouseDown={(e) => {
+            const target = e.target as HTMLElement | null;
+            if (
+              !target?.closest('input, textarea, select, form') &&
+              stageMainRef.current
+            ) {
+              stageMainRef.current.focus({ preventScroll: true });
+            }
             if (document.activeElement instanceof HTMLElement && document.activeElement.tagName === 'BUTTON') {
               document.activeElement.blur();
             }
-            const target = e.target as HTMLElement | null;
             const isEmptyStage =
               e.target === e.currentTarget || target?.dataset.stageArea === 'true';
             if ((isSpaceHeld || isHandMode || isEmptyStage) && e.button === 0) {
@@ -2270,7 +2780,7 @@ export const EditorPage: React.FC = () => {
             stagePanRef.current.active = false;
             setIsPanningStage(false);
           }}
-          className={`canvas-stage-dots relative flex flex-1 flex-col items-center justify-center overflow-hidden px-3 py-3 sm:p-5 ${
+          className={`canvas-stage-dots relative flex flex-1 flex-col items-center justify-center overflow-hidden px-3 py-3 outline-none sm:p-5 ${
             mobileSheetTab ? 'max-md:pb-4' : 'max-md:pb-20'
           } ${
             isPanningStage
@@ -2280,6 +2790,20 @@ export const EditorPage: React.FC = () => {
                 : ''
           }`}
         >
+          {/* Drag-and-Drop Overlay */}
+          {isStageDragOver && (
+            <div className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#4F46E5] bg-[#EEF2FF]/90 backdrop-blur-xs dark:border-indigo-400 dark:bg-indigo-950/85">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#4F46E5] text-white shadow-lg">
+                <ImagePlus className="h-6 w-6" />
+              </div>
+              <p className="text-sm font-bold text-[#0F172A] dark:text-white">
+                ছবি এখানে ছেড়ে দিন
+              </p>
+              <p className="text-xs font-medium text-[#4338CA] dark:text-indigo-200">
+                ছবিটি সরাসরি এডিটর প্যানেলে ও লেয়ারে যোগ হয়ে যাবে
+              </p>
+            </div>
+          )}
           {/* Floating Canvas Toolbar Pill */}
           <div
             data-no-stage-wheel="true"
@@ -2405,6 +2929,16 @@ export const EditorPage: React.FC = () => {
             >
               <Pencil className="h-3 w-3" />
               <span>পেন্সিল</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePasteFromClipboardButton}
+              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-[11.5px] font-semibold text-[#0F172A] transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-gray-800"
+              title="কপি করা ছবি পেস্ট করুন (ক্যানভাসে ক্লিক করে Ctrl+V)"
+            >
+              <ClipboardPaste className="h-3 w-3 text-[#4F46E5]" />
+              <span className="hidden sm:inline">পেস্ট</span>
             </button>
           </div>
 
@@ -2683,6 +3217,93 @@ export const EditorPage: React.FC = () => {
                       className="swatch-picker h-6 w-7"
                       title="রং পরিবর্তন"
                     />
+                  </div>
+                </div>
+              );
+            })()}
+
+          {/* Floating Quick Edit Bar for Selected Added Image Layer */}
+          {activeExtraImageId &&
+            (() => {
+              const activeImg = extraImages.find((img) => img.id === activeExtraImageId);
+              if (!activeImg) return null;
+              return (
+                <div
+                  data-no-stage-wheel="true"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="relative z-20 mt-3 w-full max-w-[480px] space-y-2 rounded-xl border border-[#E5E7EB] bg-white p-3 text-xs shadow-lg dark:border-[#1F2937] dark:bg-[#111827]"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-bold text-[#0F172A] dark:text-slate-100">
+                      {activeImg.name}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDesktopTab('layers');
+                          setMobileSheetTab('layers');
+                        }}
+                        className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] px-2 py-1 text-[11px] font-semibold text-[#4F46E5] hover:bg-indigo-50 dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-indigo-300"
+                      >
+                        সব অপশন
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          commitHistoryNow();
+                          setExtraImages((prev) => prev.filter((x) => x.id !== activeImg.id));
+                          setSelectedLayerId('headline');
+                        }}
+                        title="এই ছবি লেয়ার মুছুন"
+                        className="cursor-pointer rounded-lg border border-red-200 bg-red-50 p-1.5 text-[#EF4444] hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLayerId('headline')}
+                        title="সিলেকশন বন্ধ"
+                        className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-white p-1.5 text-[#64748B] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-300"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold text-[#64748B] dark:text-slate-300">
+                      প্রস্থ
+                    </span>
+                    <EditableNumberBadge
+                      value={Math.round(activeImg.widthPercent)}
+                      min={8}
+                      max={150}
+                      suffix="%"
+                      onChange={(widthPercent) =>
+                        setExtraImages((prev) =>
+                          prev.map((x) =>
+                            x.id === activeImg.id ? { ...x, widthPercent } : x
+                          )
+                        )
+                      }
+                      ariaLabel="ছবি লেয়ারের প্রস্থ"
+                    />
+                    <div className="min-w-[100px] flex-1">
+                      <RangeSlider
+                        min={8}
+                        max={150}
+                        value={Math.round(activeImg.widthPercent)}
+                        onChange={(widthPercent) =>
+                          setExtraImages((prev) =>
+                            prev.map((x) =>
+                              x.id === activeImg.id ? { ...x, widthPercent } : x
+                            )
+                          )
+                        }
+                        ariaLabel="ছবি লেয়ারের প্রস্থ"
+                      />
+                    </div>
                   </div>
                 </div>
               );

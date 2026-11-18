@@ -4,12 +4,13 @@ import {
   Download,
   HelpCircle,
   Image as ImageIcon,
+  Layers,
   LayoutGrid,
   Palette,
   Type,
 } from 'lucide-react';
 
-export type EditorTabId = 'text' | 'style' | 'photo' | 'logo' | 'template' | 'export';
+export type EditorTabId = 'text' | 'layers' | 'style' | 'photo' | 'logo' | 'template' | 'export';
 
 export const EDITOR_TABS: Array<{
   id: EditorTabId;
@@ -17,6 +18,7 @@ export const EDITOR_TABS: Array<{
   icon: React.ComponentType<{ className?: string }>;
 }> = [
   { id: 'text', label: 'টেক্সট', icon: Type },
+  { id: 'layers', label: 'লেয়ার', icon: Layers },
   { id: 'style', label: 'স্টাইল', icon: Palette },
   { id: 'photo', label: 'ছবি', icon: ImageIcon },
   { id: 'logo', label: 'লোগো', icon: BadgeCheck },
@@ -80,7 +82,7 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
       {/* Mobile Bottom Tab Bar (<768px) */}
       <nav
         aria-label="মোবাইল এডিটর ট্যাব"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-[#E5E7EB] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden dark:border-[#1F2937] dark:bg-[#111827]/95"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-7 border-t border-[#E5E7EB] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden dark:border-[#1F2937] dark:bg-[#111827]/95"
       >
         {EDITOR_TABS.map((tab) => {
           const Icon = tab.icon;

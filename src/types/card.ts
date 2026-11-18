@@ -178,12 +178,30 @@ export interface TemplateConfig {
   websiteUrl?: string;
 }
 
+export interface ExtraImageLayer {
+  id: string;
+  name: string;
+  dataUrl: string;
+  x: number; // 0..1 normalized center X
+  y: number; // 0..1 normalized center Y
+  widthPercent: number; // 8..150 (% of canvasWidth)
+  aspectRatio: number; // naturalWidth / naturalHeight
+  rotation: number; // -180..180 deg
+  opacity: number; // 0..100 (%)
+  borderRadius: number; // 0..50 (%)
+  borderWidth: number; // 0..24 px
+  borderColor: string;
+  shadow: boolean;
+}
+
 export interface TemplateOverride {
   name?: string;
   category?: Exclude<TemplateCategory, 'সব'>;
   kickerText?: string;
   footerCtaText?: string;
   websiteUrl?: string;
+  dateText?: string;
+  palette?: Partial<NonNullable<TemplateConfig['palette']>>;
 }
 
 export interface RenderedLayoutMetrics {
@@ -194,4 +212,5 @@ export interface RenderedLayoutMetrics {
   logoHitBox: RectBox | null;
   subheadingHitBox: RectBox | null;
   customTextHitBoxes: Array<{ id: string; box: RectBox }>;
+  extraImageHitBoxes: Array<{ id: string; box: RectBox }>;
 }

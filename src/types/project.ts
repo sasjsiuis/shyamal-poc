@@ -1,6 +1,7 @@
 import type {
   CustomTextItem,
   ExportFormat,
+  ExtraImageLayer,
   HighlightRange,
   LineMode,
   LogoSettings,
@@ -32,6 +33,11 @@ export interface ProjectEditorState {
   logoSettings: LogoSettings;
   subheading: SubheadingSettings;
   customTexts: CustomTextItem[];
+  extraImages?: ExtraImageLayer[];
+  layerOrder?: string[];
+  layerVisibility?: Record<string, boolean>;
+  layerOpacity?: Record<string, number>;
+  layerLocks?: Record<string, boolean>;
   exportFormat: ExportFormat;
   exportQuality: number;
   templateOverrides: Record<string, TemplateOverride>;

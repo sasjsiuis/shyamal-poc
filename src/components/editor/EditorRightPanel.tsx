@@ -17,6 +17,7 @@ import {
 import type {
   CustomTextItem,
   ExportFormat,
+  ExtraImageLayer,
   FontOption,
   HighlightRange,
   LineMode,
@@ -33,6 +34,7 @@ import { EditableNumberBadge } from '../EditableNumberBadge';
 import { RangeSlider } from '../RangeSlider';
 import { TemplateGallery } from '../TemplateGallery';
 import type { EditorTabId } from './EditorSidebar';
+import { LayersPanel } from './LayersPanel';
 
 export interface ParsedWord {
   index: number;
@@ -151,6 +153,27 @@ interface EditorRightPanelProps {
   onChangeExportQuality: (q: number) => void;
   onDownload: () => void;
   downloadDone: boolean;
+  // Layers Controls
+  resolvedLayerOrder: string[];
+  selectedLayerId: string;
+  onSelectLayer: (layerId: string) => void;
+  layerVisibility: Record<string, boolean>;
+  onToggleLayerVisibility: (layerId: string) => void;
+  layerOpacity: Record<string, number>;
+  onChangeLayerOpacity: (layerId: string, opacity: number) => void;
+  layerLocks: Record<string, boolean>;
+  onToggleLayerLock: (layerId: string) => void;
+  onMoveLayerStep: (layerId: string, direction: 'up' | 'down') => void;
+  onReorderVisualLayers: (fromVisualIdx: number, toVisualIdx: number) => void;
+  onResetLayerSystem: () => void;
+  onDeleteCustomText: (id: string) => void;
+  extraImages: ExtraImageLayer[];
+  onChangeExtraImages: (updater: (prev: ExtraImageLayer[]) => ExtraImageLayer[]) => void;
+  onDeleteExtraImage: (id: string) => void;
+  onTriggerAddExtraImage: () => void;
+  onPromoteExtraImageToMain: (id: string) => void;
+  dateText: string;
+  onSwitchToTemplateTab: () => void;
 }
 
 const SliderHeader: React.FC<{
@@ -762,6 +785,82 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
             </div>
           </AccordionSection>
         </>
+      )}
+
+      {/* TAB 1B: লেয়ার */}
+      {activeTab === 'layers' && (
+        <LayersPanel
+          resolvedLayerOrder={props.resolvedLayerOrder}
+          selectedLayerId={props.selectedLayerId}
+          onSelectLayer={props.onSelectLayer}
+          layerVisibility={props.layerVisibility}
+          onToggleVisibility={props.onToggleLayerVisibility}
+          layerOpacity={props.layerOpacity}
+          onChangeLayerOpacity={props.onChangeLayerOpacity}
+          layerLocks={props.layerLocks}
+          onToggleLock={props.onToggleLayerLock}
+          onMoveLayerStep={props.onMoveLayerStep}
+          onReorderVisualLayers={props.onReorderVisualLayers}
+          onResetLayerSystem={props.onResetLayerSystem}
+          headline={props.headline}
+          onHeadlineChange={props.onHeadlineChange}
+          parsedWords={props.parsedWords}
+          isWordHighlighted={props.isWordHighlighted}
+          onToggleWordHighlight={props.onToggleWordHighlight}
+          onClearAllHighlights={props.onClearAllHighlights}
+          hasHighlights={props.hasHighlights}
+          lineMode={props.lineMode}
+          onChangeLineMode={props.onChangeLineMode}
+          allFonts={props.allFonts}
+          activeFont={props.activeFont}
+          onSelectFont={props.onSelectFont}
+          fontSizePercent={props.fontSizePercent}
+          onChangeFontSizePercent={props.onChangeFontSizePercent}
+          lineGapPercent={props.lineGapPercent}
+          onChangeLineGapPercent={props.onChangeLineGapPercent}
+          textOffsetX={props.textOffsetX}
+          textOffsetY={props.textOffsetY}
+          onChangeTextOffset={props.onChangeTextOffset}
+          textShadow={props.textShadow}
+          onChangeTextShadow={props.onChangeTextShadow}
+          textColor={props.textColor}
+          onChangeTextColor={props.onChangeTextColor}
+          highlightColor={props.highlightColor}
+          onChangeHighlightColor={props.onChangeHighlightColor}
+          subheading={props.subheading}
+          onChangeSubheading={props.onChangeSubheading}
+          onResetSubheading={props.onResetSubheading}
+          customTexts={props.customTexts}
+          onChangeCustomTexts={props.onChangeCustomTexts}
+          onDeleteCustomText={props.onDeleteCustomText}
+          onAddDirectCustomText={props.onAddDirectCustomText}
+          onStartPencilMode={props.onStartPencilMode}
+          extraImages={props.extraImages}
+          onChangeExtraImages={props.onChangeExtraImages}
+          onDeleteExtraImage={props.onDeleteExtraImage}
+          onTriggerAddExtraImage={props.onTriggerAddExtraImage}
+          onPromoteExtraImageToMain={props.onPromoteExtraImageToMain}
+          photoZoom={props.photoZoom}
+          onChangePhotoZoom={props.onChangePhotoZoom}
+          photoPanX={props.photoPanX}
+          onChangePhotoPanX={props.onChangePhotoPanX}
+          photoPanY={props.photoPanY}
+          onChangePhotoPanY={props.onChangePhotoPanY}
+          onTriggerPhotoUpload={props.onTriggerPhotoUpload}
+          onResetPhoto={props.onResetPhoto}
+          logoSettings={props.logoSettings}
+          onChangeLogoSettings={props.onChangeLogoSettings}
+          onTriggerLogoUpload={props.onTriggerLogoUpload}
+          onOpenLogoEditor={props.onOpenLogoEditor}
+          effectiveTemplate={props.effectiveTemplate}
+          selectedTemplate={props.selectedTemplate}
+          dateText={props.dateText}
+          onUpdateActiveTemplateOverride={props.onUpdateActiveTemplateOverride}
+          onResetActiveTemplateOverride={props.onResetActiveTemplateOverride}
+          onTriggerCustomFrameUpload={props.onTriggerCustomFrameUpload}
+          onSwitchToTemplateTab={props.onSwitchToTemplateTab}
+          onCommitHistory={props.onCommitHistory}
+        />
       )}
 
       {/* TAB 2: স্টাইল */}

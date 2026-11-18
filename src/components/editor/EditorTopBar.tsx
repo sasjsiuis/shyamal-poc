@@ -10,9 +10,11 @@ import {
   Moon,
   Newspaper,
   Pencil,
+  Redo2,
   RotateCcw,
   Save,
   Sun,
+  Undo2,
   X,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
@@ -40,6 +42,12 @@ interface EditorTopBarProps {
   onChangeExportFormat: (fmt: ExportFormat) => void;
   onDownload: () => void;
   downloadDone: boolean;
+  // Mobile top bar controls
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onOpenMobileUrlModal?: () => void;
 }
 
 export const EditorTopBar: React.FC<EditorTopBarProps> = ({
@@ -60,6 +68,11 @@ export const EditorTopBar: React.FC<EditorTopBarProps> = ({
   onChangeExportFormat,
   onDownload,
   downloadDone,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
+  onOpenMobileUrlModal,
 }) => {
   const { isDark, toggleDark } = useTheme();
   const [editingName, setEditingName] = useState(false);
@@ -74,8 +87,108 @@ export const EditorTopBar: React.FC<EditorTopBarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-white dark:border-[#1F2937] dark:bg-[#111827]">
-      <div className="flex h-16 items-center justify-between gap-2 px-3 sm:gap-3 sm:px-4">
+    <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-white pt-[env(safe-area-inset-top)] dark:border-[#1F2937] dark:bg-[#111827]">
+      {/* Mobile Compact 48px Top Bar (<768px) */}
+      <div className="flex h-12 items-center justify-between gap-1 px-1.5 md:hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5">
+          <Link
+            to="/templates"
+            title="টেমপ্লেট গ্যালারিতে ফিরুন"
+            aria-label="টেমপ্লেটে ফিরুন"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[#0F172A] active:bg-slate-100 dark:text-slate-100 dark:active:bg-gray-800"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+
+          {editingName ? (
+            <input
+              type="text"
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitName();
+                if (e.key === 'Escape') setEditingName(false);
+              }}
+              aria-label="প্রজেক্টের নাম"
+              className="h-11 min-w-0 flex-1 rounded-lg border border-[#4F46E5] bg-white px-2 text-[16px] font-semibold text-[#0F172A] focus:outline-none dark:bg-[#0B0F19] dark:text-slate-100"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setNameDraft(projectName);
+                setEditingName(true);
+              }}
+              title="প্রজেক্টের নাম বদলাতে ক্লিক করুন"
+              aria-label={`নাম বদলান: ${templateName}`}
+              className="flex min-h-[44px] min-w-[44px] max-w-full flex-1 cursor-pointer items-center gap-1 overflow-hidden rounded-lg px-1.5 text-left text-[13.5px] font-bold text-[#0F172A] active:bg-slate-100 dark:text-slate-100 dark:active:bg-gray-800"
+            >
+              <span className="truncate">{templateName}</span>
+            </button>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          {onOpenMobileUrlModal && (
+            <button
+              type="button"
+              onClick={onOpenMobileUrlModal}
+              title="লিংক বদলান"
+              aria-label="লিংক বদলান"
+              className={`relative flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors active:bg-slate-100 dark:active:bg-gray-800 ${
+                newsUrl.trim() ? 'text-[#4F46E5] dark:text-indigo-400' : 'text-[#0F172A] dark:text-slate-200'
+              }`}
+            >
+              <Link2 className="h-[18px] w-[18px]" />
+            </button>
+          )}
+
+          {onUndo && (
+            <button
+              type="button"
+              onClick={onUndo}
+              disabled={!canUndo}
+              title="পিছনে যান"
+              aria-label="আনডু"
+              className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg text-[#0F172A] transition-colors active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30 dark:text-slate-200 dark:active:bg-gray-800"
+            >
+              <Undo2 className="h-[18px] w-[18px]" />
+            </button>
+          )}
+
+          {onRedo && (
+            <button
+              type="button"
+              onClick={onRedo}
+              disabled={!canRedo}
+              title="সামনে যান"
+              aria-label="রিডু"
+              className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg text-[#0F172A] transition-colors active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30 dark:text-slate-200 dark:active:bg-gray-800"
+            >
+              <Redo2 className="h-[18px] w-[18px]" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onDownload}
+            aria-label="কার্ড ডাউনলোড"
+            className="ml-0.5 inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-xl bg-[#4F46E5] px-3 text-[13px] font-semibold text-white shadow-xs transition-colors active:bg-[#4338CA] whitespace-nowrap"
+          >
+            {downloadDone ? (
+              <Check className="h-4 w-4 stroke-[2.5]" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            <span>{downloadDone ? 'সেভ' : 'ডাউনলোড'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop Top Bar (>=768px) — Unchanged */}
+      <div className="hidden h-16 items-center justify-between gap-2 px-3 sm:gap-3 sm:px-4 md:flex">
         {/* Left: Back arrow + Template/Project name + Save status */}
         <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
           <Link
@@ -253,49 +366,6 @@ export const EditorTopBar: React.FC<EditorTopBarProps> = ({
             <span>{downloadDone ? 'হয়েছে ✓' : 'ডাউনলোড'}</span>
           </button>
         </div>
-      </div>
-
-      {/* Mobile URL Bar */}
-      <div className="flex items-center gap-1.5 border-t border-[#E5E7EB] px-3 py-2 md:hidden dark:border-[#1F2937]">
-        <div className="relative flex-1">
-          <Link2 className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]" />
-          <input
-            type="url"
-            value={newsUrl}
-            onPaste={onNewsUrlPaste}
-            onChange={(e) => {
-              const raw = e.target.value;
-              const nextVal = /https?:\/\/.*https?:\/\//i.test(raw)
-                ? sanitizeUrlInput(raw)
-                : raw;
-              onNewsUrlChange(nextVal);
-            }}
-            placeholder="নিউজের লিংক পেস্ট করুন..."
-            aria-label="নিউজের লিংক"
-            className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] pl-8 pr-7 text-[13px] text-[#0F172A] placeholder:text-[#64748B] focus:border-[#4F46E5] focus:bg-white focus:outline-none dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-100"
-          />
-          {newsUrl.length > 0 && (
-            <button
-              type="button"
-              onClick={onClearNewsUrl}
-              aria-label="লিংক মুছুন"
-              className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-[#64748B]"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-        {isLikelyValidUrl && (
-          <button
-            type="button"
-            disabled={isExtracting}
-            onClick={onTriggerFetch}
-            className="inline-flex h-9 shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-xs font-semibold text-[#0F172A] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-100"
-          >
-            <RotateCcw className={`h-3.5 w-3.5 ${isExtracting ? 'animate-spin' : ''}`} />
-            <span>আনুন</span>
-          </button>
-        )}
       </div>
     </header>
   );

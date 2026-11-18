@@ -23,6 +23,8 @@ export const RangeSlider: React.FC<RangeSliderProps> = ({
   const pct = max === min ? 0 : ((clamped - min) / (max - min)) * 100;
   const trackBg = isDark ? '#1F2937' : '#E5E7EB';
 
+  const fillGradient = `linear-gradient(to right, #4F46E5 0%, #4F46E5 ${pct}%, ${trackBg} ${pct}%, ${trackBg} 100%)`;
+
   return (
     <input
       type="range"
@@ -33,9 +35,12 @@ export const RangeSlider: React.FC<RangeSliderProps> = ({
       aria-label={ariaLabel}
       onChange={(e) => onChange(Number(e.target.value))}
       className="card-slider block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4F46E5]/50"
-      style={{
-        background: `linear-gradient(to right, #4F46E5 0%, #4F46E5 ${pct}%, ${trackBg} ${pct}%, ${trackBg} 100%)`,
-      }}
+      style={
+        {
+          background: fillGradient,
+          '--slider-fill': fillGradient,
+        } as React.CSSProperties
+      }
     />
   );
 };

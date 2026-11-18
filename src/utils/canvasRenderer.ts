@@ -34,6 +34,7 @@ export interface RenderCardOptions {
   textShadow: boolean;
   textColor: string;
   highlightColor: string;
+  headlineAlignOverride?: 'left' | 'center' | 'right';
   photoZoom: number;
   photoPanX: number;
   photoPanY: number;
@@ -50,6 +51,7 @@ export interface RenderCardOptions {
   dateTextOverride?: string;
   isExport?: boolean;
   snapState?: { snappedX: boolean; snappedY: boolean; isDragging: boolean };
+  outlineLayerId?: string | null;
 }
 
 interface TextSegment {
@@ -3937,6 +3939,7 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     textShadow,
     textColor,
     highlightColor,
+    headlineAlignOverride,
     photoZoom,
     photoPanX,
     photoPanY,
@@ -3953,6 +3956,7 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     dateTextOverride,
     isExport = false,
     snapState,
+    outlineLayerId,
   } = opts;
 
   const W = template.canvasWidth;
@@ -4002,8 +4006,12 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
   const trimmedHeadline = headline.trim();
   const centerX = hb.centerX + textOffsetX * W;
   const centerY = hb.centerY + textOffsetY * H;
-  const isLeftAligned = template.headlineAlign === 'left';
+  const resolvedAlign: 'left' | 'center' | 'right' =
+    headlineAlignOverride ?? template.headlineAlign ?? 'center';
+  const isLeftAligned = resolvedAlign === 'left';
+  const isRightAligned = resolvedAlign === 'right';
   const leftAnchorX = hb.centerX - hb.maxWidth / 2 + textOffsetX * W;
+  const rightAnchorX = hb.centerX + hb.maxWidth / 2 + textOffsetX * W;
 
   let textHitBox: RectBox = {
     x: hb.centerX - hb.maxWidth * 0.4,
@@ -4012,7 +4020,11 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     height: hb.maxHeight * 0.7,
   };
   let renderedHeadlineBottomY = centerY + hb.maxHeight * 0.25;
-  const renderedHeadlineLeftX = leftAnchorX;
+  const renderedHeadlineAnchorX = isLeftAligned
+    ? leftAnchorX
+    : isRightAligned
+      ? rightAnchorX
+      : centerX;
 
   let computedHeadlineLines: WordToken[][] = [];
   let computedRenderFontSize = hb.baseFontSize;
@@ -4133,7 +4145,11 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     const padX = Math.max(24, computedRenderFontSize * 0.35);
     const padY = Math.max(18, computedRenderFontSize * 0.25);
     textHitBox = {
-      x: isLeftAligned ? leftAnchorX - padX : centerX - maxRenderedLineW / 2 - padX,
+      x: isLeftAligned
+        ? leftAnchorX - padX
+        : isRightAligned
+          ? rightAnchorX - maxRenderedLineW - padX
+          : centerX - maxRenderedLineW / 2 - padX,
       y: centerY - blockHeight / 2 - padY,
       width: Math.max(120, maxRenderedLineW + padX * 2),
       height: Math.max(60, blockHeight + padY * 2),
@@ -4340,7 +4356,11 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
         for (let lineIdx = 0; lineIdx < numLines; lineIdx++) {
           const words = computedHeadlineLines[lineIdx];
           const lineW = measureWordListWidth(ctx, words, computedSpaceWidth);
-          let cursorX = isLeftAligned ? leftAnchorX : centerX - lineW / 2;
+          let cursorX = isLeftAligned
+            ? leftAnchorX
+            : isRightAligned
+              ? rightAnchorX - lineW
+              : centerX - lineW / 2;
           const lineY = firstLineCenterY + lineIdx * computedLineHeight;
 
           for (let wIdx = 0; wIdx < words.length; wIdx++) {
@@ -4394,8 +4414,7 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
             ? renderedHeadlineBottomY + subFontSize * 0.72
             : centerY) +
           subheading.offsetY * H;
-        const baseSubX =
-          (isLeftAligned ? renderedHeadlineLeftX : centerX) + subheading.offsetX * W;
+        const baseSubX = renderedHeadlineAnchorX + subheading.offsetX * W;
 
         if (textShadow) {
           ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
@@ -4403,7 +4422,7 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
           ctx.shadowOffsetY = Math.max(1, subFontSize * 0.05);
         }
         ctx.fillStyle = subheading.color?.trim() ? subheading.color : textColor;
-        ctx.textAlign = isLeftAligned ? 'left' : 'center';
+        ctx.textAlign = resolvedAlign;
         ctx.textBaseline = 'middle';
 
         let maxSubLineW = 0;
@@ -4418,7 +4437,12 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
         const subPadX = Math.max(20, subFontSize * 0.45);
         const subPadY = Math.max(14, subFontSize * 0.35);
         subheadingHitBox = {
-          x: (isLeftAligned ? baseSubX : baseSubX - maxSubLineW / 2) - subPadX,
+          x:
+            (isLeftAligned
+              ? baseSubX
+              : isRightAligned
+                ? baseSubX - maxSubLineW
+                : baseSubX - maxSubLineW / 2) - subPadX,
           y: baseSubY - subBlockH / 2 - subPadY,
           width: Math.max(90, maxSubLineW + subPadX * 2),
           height: Math.max(40, subBlockH + subPadY * 2),
@@ -4537,6 +4561,58 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     }
   }
 
+  if (!isExport && outlineLayerId) {
+    let targetBox: RectBox | null = null;
+    if (outlineLayerId === 'headline' && trimmedHeadline.length > 0) {
+      targetBox = textHitBox;
+    } else if (outlineLayerId === 'photo') {
+      targetBox = template.photoBox;
+    } else if (outlineLayerId === 'logo') {
+      targetBox = logoHitBox;
+    } else if (outlineLayerId === 'subheading') {
+      targetBox = subheadingHitBox;
+    } else if (outlineLayerId === 'frame') {
+      targetBox = { x: 8, y: 8, width: W - 16, height: H - 16 };
+    } else if (outlineLayerId === 'date-badge') {
+      targetBox = {
+        x: Math.round(W * 0.04),
+        y: template.styleType === 'psd-overlay' ? template.photoBox.y + 12 : Math.round(H * 0.03),
+        width: Math.round(W * 0.44),
+        height: Math.round(H * 0.08),
+      };
+    } else if (outlineLayerId === 'footer') {
+      targetBox = {
+        x: Math.round(W * 0.04),
+        y: Math.round(H * 0.87),
+        width: Math.round(W * 0.92),
+        height: Math.round(H * 0.11),
+      };
+    } else if (outlineLayerId.startsWith('text:')) {
+      targetBox = customTextHitBoxes.find((c) => c.id === outlineLayerId.slice(5))?.box ?? null;
+    } else if (outlineLayerId.startsWith('image:')) {
+      targetBox = extraImageHitBoxes.find((img) => img.id === outlineLayerId.slice(6))?.box ?? null;
+    }
+
+    if (targetBox) {
+      const pad = Math.round(W * 0.008);
+      ctx.save();
+      ctx.strokeStyle = '#4F46E5';
+      ctx.lineWidth = Math.max(4, Math.round(W * 0.006));
+      ctx.shadowColor = 'rgba(79, 70, 229, 0.45)';
+      ctx.shadowBlur = Math.round(W * 0.014);
+      drawRoundedRect(
+        ctx,
+        Math.max(4, targetBox.x - pad),
+        Math.max(4, targetBox.y - pad),
+        Math.min(W - 8, targetBox.width + pad * 2),
+        Math.min(H - 8, targetBox.height + pad * 2),
+        Math.round(W * 0.012)
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   return {
     canvasWidth: W,
     canvasHeight: H,
@@ -4548,4 +4624,302 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     extraImageHitBoxes,
   };
 }
+
+let cachedThumbSourceCanvas: HTMLCanvasElement | null = null;
+
+function isLightHexColor(color: string): boolean {
+  const hex = color.trim().replace('#', '');
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (/^[0-9a-f]{3}$/i.test(hex)) {
+    r = parseInt(hex[0] + hex[0], 16);
+    g = parseInt(hex[1] + hex[1], 16);
+    b = parseInt(hex[2] + hex[2], 16);
+  } else if (/^[0-9a-f]{6}$/i.test(hex)) {
+    r = parseInt(hex.slice(0, 2), 16);
+    g = parseInt(hex.slice(2, 4), 16);
+    b = parseInt(hex.slice(4, 6), 16);
+  } else {
+    return false;
+  }
+  return 0.299 * r + 0.587 * g + 0.114 * b > 195;
+}
+
+/**
+ * Renders a single isolated layer onto a small thumbnail canvas (e.g. 84x48)
+ * over a crisp checkerboard background using the exact same canvas draw primitives.
+ */
+export function renderLayerThumbnail(
+  targetCanvas: HTMLCanvasElement,
+  layerId: string,
+  opts: Omit<RenderCardOptions, 'ctx' | 'isExport' | 'snapState' | 'outlineLayerId'>,
+  width = 84,
+  height = 48
+): void {
+  const dpr = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+  const pw = Math.round(width * dpr);
+  const ph = Math.round(height * dpr);
+  if (targetCanvas.width !== pw) targetCanvas.width = pw;
+  if (targetCanvas.height !== ph) targetCanvas.height = ph;
+
+  const tctx = targetCanvas.getContext('2d');
+  if (!tctx) return;
+
+  // 1. Subtle checkerboard background for transparent regions
+  const tile = Math.round(6 * dpr);
+  tctx.clearRect(0, 0, pw, ph);
+  for (let y = 0; y < ph; y += tile) {
+    for (let x = 0; x < pw; x += tile) {
+      const darkTile = (Math.floor(x / tile) + Math.floor(y / tile)) % 2 === 1;
+      tctx.fillStyle = darkTile ? '#e2e8f0' : '#f8fafc';
+      tctx.fillRect(x, y, tile, tile);
+    }
+  }
+
+  const { template } = opts;
+  const W = template.canvasWidth;
+  const H = template.canvasHeight;
+
+  // Half-scale scratch canvas keeps rendering crisp & < 2ms
+  const scratchScale = Math.min(0.5, 540 / Math.max(W, H));
+  const sw = Math.max(240, Math.round(W * scratchScale));
+  const sh = Math.max(240, Math.round(H * scratchScale));
+
+  if (!cachedThumbSourceCanvas) {
+    cachedThumbSourceCanvas = document.createElement('canvas');
+  }
+  const srcCanvas = cachedThumbSourceCanvas;
+  if (srcCanvas.width !== sw) srcCanvas.width = sw;
+  if (srcCanvas.height !== sh) srcCanvas.height = sh;
+  const sctx = srcCanvas.getContext('2d');
+  if (!sctx) return;
+
+  sctx.save();
+  sctx.clearRect(0, 0, sw, sh);
+  sctx.scale(sw / W, sh / H);
+
+  let cropBox: RectBox = { x: 0, y: 0, width: W, height: H };
+
+  if (layerId === 'frame') {
+    const metrics = renderNewsCard({
+      ...opts,
+      ctx: sctx,
+      layerOrder: ['frame'],
+      layerVisibility: { frame: true, photo: false, headline: false, subheading: false, logo: false, 'date-badge': false, footer: false },
+      layerOpacity: { frame: 100 },
+      isExport: true,
+    });
+    void metrics;
+    cropBox = { x: 0, y: 0, width: W, height: H };
+  } else if (layerId === 'photo') {
+    drawPhotoIntoBox(
+      sctx,
+      opts.photoImg,
+      template.photoBox,
+      0,
+      opts.photoZoom,
+      opts.photoPanX,
+      opts.photoPanY,
+      true
+    );
+    cropBox = template.photoBox;
+  } else if (layerId === 'logo') {
+    const hasCustom = Boolean(opts.logoSettings.dataUrl && opts.logoImg && opts.logoImg.naturalWidth > 0);
+    const activeLogo = hasCustom ? opts.logoImg : opts.officialLogoImg;
+    const slot =
+      template.styleType === 'psd-overlay'
+        ? getPsdBrandLogoSlot(template)
+        : renderProceduralTemplateChrome(
+            sctx,
+            template,
+            null,
+            1,
+            0,
+            0,
+            true,
+            true,
+            { skipPhotoDraw: true }
+          );
+    sctx.clearRect(0, 0, W, H);
+    if (hasCustom && opts.logoImg) {
+      cropBox = drawUnifiedBrandLogo(sctx, W, H, slot, opts.logoImg, { ...opts.logoSettings, x: 0, y: 0 });
+    } else if (isBuiltInPortalLogoTemplate(template.styleType)) {
+      cropBox = drawPortalDefaultLogo(sctx, W, H, slot, template.styleType, { ...opts.logoSettings, x: 0, y: 0 });
+    } else if (activeLogo && activeLogo.naturalWidth > 0) {
+      cropBox = drawUnifiedBrandLogo(sctx, W, H, slot, activeLogo, { ...opts.logoSettings, x: 0, y: 0 });
+    } else {
+      cropBox = { x: slot.x, y: slot.y, width: slot.maxWidth, height: slot.maxHeight };
+    }
+  } else if (layerId === 'headline') {
+    // Draw subtle contrast surface behind light text so white headlines stay crisp in preview
+    const hb = template.headlineBox;
+    if (isLightHexColor(opts.textColor)) {
+      const surfaceBg =
+        template.palette?.bgPrimary ||
+        (template.id === 'psd-green' ? '#024c4b' : template.id === 'psd-maroon' ? '#5a0b22' : '#0f172a');
+      sctx.save();
+      sctx.fillStyle = surfaceBg;
+      drawRoundedRect(
+        sctx,
+        hb.centerX - hb.maxWidth / 2 - 20,
+        hb.centerY - hb.maxHeight / 2 - 12,
+        hb.maxWidth + 40,
+        hb.maxHeight + 24,
+        24
+      );
+      sctx.fill();
+      sctx.restore();
+    }
+    const metrics = renderNewsCard({
+      ...opts,
+      ctx: sctx,
+      layerOrder: ['headline'],
+      layerVisibility: { headline: true },
+      layerOpacity: { headline: 100 },
+      textOffsetX: 0,
+      textOffsetY: 0,
+      isExport: true,
+    });
+    cropBox = metrics.textHitBox;
+  } else if (layerId === 'subheading') {
+    if (isLightHexColor(opts.subheading?.color || opts.textColor)) {
+      const surfaceBg = template.palette?.bgPrimary || '#0f172a';
+      sctx.save();
+      sctx.fillStyle = surfaceBg;
+      sctx.fillRect(0, 0, W, H);
+      sctx.restore();
+    }
+    const metrics = renderNewsCard({
+      ...opts,
+      ctx: sctx,
+      layerOrder: ['subheading'],
+      layerVisibility: { subheading: true, headline: false },
+      layerOpacity: { subheading: 100 },
+      isExport: true,
+    });
+    cropBox = metrics.subheadingHitBox || { x: W * 0.1, y: H * 0.4, width: W * 0.8, height: H * 0.2 };
+  } else if (layerId === 'date-badge') {
+    if (template.styleType === 'psd-overlay') {
+      const metrics = renderNewsCard({
+        ...opts,
+        ctx: sctx,
+        layerOrder: ['date-badge'],
+        layerVisibility: { 'date-badge': true },
+        layerOpacity: { 'date-badge': 100 },
+        isExport: true,
+      });
+      void metrics;
+      cropBox = {
+        x: template.photoBox.x,
+        y: template.photoBox.y,
+        width: Math.round(W * 0.45),
+        height: Math.round(H * 0.12),
+      };
+    } else {
+      renderNewsCard({
+        ...opts,
+        ctx: sctx,
+        layerOrder: ['frame', 'date-badge'],
+        layerVisibility: { frame: true, 'date-badge': true, photo: false, footer: false, headline: false, subheading: false, logo: false },
+        layerOpacity: { frame: 100, 'date-badge': 100 },
+        isExport: true,
+      });
+      cropBox = {
+        x: 0,
+        y: 0,
+        width: W,
+        height: Math.round(H * 0.16),
+      };
+    }
+  } else if (layerId === 'footer') {
+    renderNewsCard({
+      ...opts,
+      ctx: sctx,
+      layerOrder: ['frame', 'footer'],
+      layerVisibility: { frame: true, footer: true, photo: false, 'date-badge': false, headline: false, subheading: false, logo: false },
+      layerOpacity: { frame: 100, footer: 100 },
+      isExport: true,
+    });
+    cropBox = {
+      x: 0,
+      y: Math.round(H * 0.78),
+      width: W,
+      height: Math.round(H * 0.22),
+    };
+  } else if (layerId.startsWith('text:')) {
+    const txtId = layerId.slice(5);
+    const item = opts.customTexts?.find((c) => c.id === txtId);
+    if (item && !item.bgColor && isLightHexColor(item.color)) {
+      sctx.fillStyle = '#0f172a';
+      sctx.fillRect(0, 0, W, H);
+    }
+    const metrics = renderNewsCard({
+      ...opts,
+      ctx: sctx,
+      layerOrder: [layerId],
+      layerVisibility: { [layerId]: true },
+      layerOpacity: { [layerId]: 100 },
+      activeCustomTextId: null,
+      isExport: true,
+    });
+    cropBox =
+      metrics.customTextHitBoxes.find((c) => c.id === txtId)?.box || {
+        x: W * 0.2,
+        y: H * 0.2,
+        width: W * 0.6,
+        height: H * 0.2,
+      };
+  } else if (layerId.startsWith('image:')) {
+    const imgId = layerId.slice(6);
+    const metrics = renderNewsCard({
+      ...opts,
+      ctx: sctx,
+      layerOrder: [layerId],
+      layerVisibility: { [layerId]: true },
+      layerOpacity: { [layerId]: 100 },
+      activeExtraImageId: null,
+      isExport: true,
+    });
+    cropBox =
+      metrics.extraImageHitBoxes.find((img) => img.id === imgId)?.box || {
+        x: W * 0.25,
+        y: H * 0.25,
+        width: W * 0.5,
+        height: H * 0.5,
+      };
+  }
+
+  sctx.restore();
+
+  // Compute source crop on scratch canvas and draw centered/fit into (pw x ph)
+  const sx = Math.max(0, (cropBox.x / W) * sw);
+  const sy = Math.max(0, (cropBox.y / H) * sh);
+  const cw = Math.max(10, Math.min(sw - sx, (cropBox.width / W) * sw));
+  const ch = Math.max(10, Math.min(sh - sy, (cropBox.height / H) * sh));
+
+  const pad = Math.round(3 * dpr);
+  const availW = Math.max(8, pw - pad * 2);
+  const availH = Math.max(8, ph - pad * 2);
+  const fit =
+    layerId === 'photo' || layerId === 'frame'
+      ? Math.max(availW / cw, availH / ch)
+      : Math.min(availW / cw, availH / ch);
+
+  const dw = Math.round(cw * fit);
+  const dh = Math.round(ch * fit);
+  const dx = Math.round((pw - dw) / 2);
+  const dy = Math.round((ph - dh) / 2);
+
+  tctx.save();
+  if (layerId === 'photo' || layerId === 'frame') {
+    tctx.drawImage(srcCanvas, sx, sy, cw, ch, 0, 0, pw, ph);
+  } else {
+    tctx.imageSmoothingEnabled = true;
+    tctx.imageSmoothingQuality = 'high';
+    tctx.drawImage(srcCanvas, sx, sy, cw, ch, dx, dy, dw, dh);
+  }
+  tctx.restore();
+}
+
 

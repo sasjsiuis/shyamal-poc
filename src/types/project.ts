@@ -26,6 +26,7 @@ export interface ProjectEditorState {
   textShadow: boolean;
   textColor: string;
   highlightColor: string;
+  headlineAlignOverride?: 'left' | 'center' | 'right';
   photoSrc: string;
   photoZoom: number;
   photoPanX: number;
@@ -38,6 +39,7 @@ export interface ProjectEditorState {
   layerVisibility?: Record<string, boolean>;
   layerOpacity?: Record<string, number>;
   layerLocks?: Record<string, boolean>;
+  layerNames?: Record<string, string>;
   exportFormat: ExportFormat;
   exportQuality: number;
   templateOverrides: Record<string, TemplateOverride>;

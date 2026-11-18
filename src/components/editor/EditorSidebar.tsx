@@ -28,18 +28,24 @@ export const EDITOR_TABS: Array<{
 
 interface EditorSidebarProps {
   activeTab: EditorTabId | null;
+  mobileActiveTab?: EditorTabId | null;
   onSelectTab: (tab: EditorTabId) => void;
   onShowShortcuts?: () => void;
+  hiddenOnMobileKeyboard?: boolean;
 }
 
 export const EditorSidebar: React.FC<EditorSidebarProps> = ({
   activeTab,
+  mobileActiveTab,
   onSelectTab,
   onShowShortcuts,
+  hiddenOnMobileKeyboard = false,
 }) => {
+  const effectiveMobileTab = mobileActiveTab !== undefined ? mobileActiveTab : activeTab;
+
   return (
     <>
-      {/* Desktop Left Icon Rail (72px) */}
+      {/* Desktop Left Icon Rail (72px) — Unchanged */}
       <aside
         aria-label="এডিটর টুলস"
         className="hidden w-[72px] shrink-0 flex-col items-center justify-between border-r border-[#E5E7EB] bg-white py-3 md:flex dark:border-[#1F2937] dark:bg-[#111827]"
@@ -79,27 +85,30 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
         )}
       </aside>
 
-      {/* Mobile Bottom Tab Bar (<768px) */}
+      {/* Mobile Bottom Tab Bar (<768px) inside 100dvh grid [tab bar] row */}
       <nav
         aria-label="মোবাইল এডিটর ট্যাব"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-7 border-t border-[#E5E7EB] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden dark:border-[#1F2937] dark:bg-[#111827]/95"
+        className={`z-30 grid shrink-0 grid-cols-7 border-t border-[#E5E7EB] bg-white pb-[env(safe-area-inset-bottom)] md:hidden dark:border-[#1F2937] dark:bg-[#111827] ${
+          hiddenOnMobileKeyboard ? 'hidden' : ''
+        }`}
       >
         {EDITOR_TABS.map((tab) => {
           const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
+          const isActive = effectiveMobileTab === tab.id;
           return (
             <button
               key={tab.id}
               type="button"
               onClick={() => onSelectTab(tab.id)}
-              className={`flex min-h-[54px] cursor-pointer flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-medium transition-colors ${
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex min-h-[54px] min-w-[44px] cursor-pointer flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 text-[12px] leading-tight font-medium transition-colors ${
                 isActive
-                  ? 'text-[#4F46E5] font-semibold dark:text-indigo-400'
+                  ? 'bg-[#EEF2FF]/65 text-[#4F46E5] font-semibold dark:bg-indigo-950/40 dark:text-indigo-400'
                   : 'text-[#64748B] dark:text-slate-400'
               }`}
             >
-              <Icon className="h-[18px] w-[18px]" />
-              <span className="truncate max-w-full whitespace-nowrap">{tab.label}</span>
+              <Icon className="h-[18px] w-[18px] shrink-0" />
+              <span className="max-w-full truncate whitespace-nowrap">{tab.label}</span>
             </button>
           );
         })}

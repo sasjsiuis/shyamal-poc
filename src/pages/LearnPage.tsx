@@ -1,12 +1,12 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   BadgeCheck,
   BookOpen,
   ChevronRight,
-  Clock,
   Download,
+  ExternalLink,
   FolderOpen,
   Highlighter,
   Image as ImageIcon,
@@ -15,6 +15,7 @@ import {
   Link2,
   Palette,
   Play,
+  Smartphone,
   Sparkles,
   Wand2,
 } from 'lucide-react';
@@ -22,7 +23,8 @@ import { Footer } from '../components/Footer';
 import { Navbar } from '../components/Navbar';
 import { toBengaliDigits } from '../utils/projectStorage';
 
-const TUTORIAL_VIDEO_SRC = '/assets/aistudio/mxb_photocard_tutorial_124eab54.mp4';
+const DESKTOP_VIDEO_ID = '8jq2rjUb4R0';
+const MOBILE_SHORTS_ID = 'M59qYQaj68E';
 
 interface VideoChapter {
   id: string;
@@ -100,6 +102,24 @@ const VIDEO_CHAPTERS: VideoChapter[] = [
   },
 ];
 
+const MOBILE_STEPS = [
+  {
+    step: '১',
+    title: 'টেমপ্লেট বা লিংক বাছাই',
+    desc: 'মোবাইল থেকেই হোম পেইজে নিউজ লিংক পেস্ট করুন অথবা পছন্দের টেমপ্লেট বেছে এডিটর খুলুন।',
+  },
+  {
+    step: '২',
+    title: 'নিচের মেনু থেকে সহজ এডিট',
+    desc: 'স্ক্রিনের নিচের টেক্সট, লেয়ার, স্টাইল, ছবি ও লোগো ট্যাবে ট্যাপ করে আঙুল দিয়ে টেনে সাজান।',
+  },
+  {
+    step: '৩',
+    title: 'সরাসরি ফোনে HD ডাউনলোড',
+    desc: 'সবকিছু ঠিক হলে এক্সপোর্ট বাটনে ট্যাপ করে PNG বা JPG ফরম্যাটে গ্যালারিতে সেভ করে শেয়ার করুন।',
+  },
+];
+
 const QUICK_TIPS = [
   {
     title: 'স্পেস চেপে প্রিভিউ সরান',
@@ -112,9 +132,9 @@ const QUICK_TIPS = [
     badge: 'ক্লিক ও টাইপ',
   },
   {
-    title: 'কার্ডের যেকোনো স্থানে টেক্সট',
-    desc: 'টুলবারের "পেন্সিল" বাটনে ক্লিক করে কার্ডের ওপর যেখানে ক্লিক করবেন, সেখানেই তারিখ, ফাইল ছবি বা বিশেষ ট্যাগ লিখতে পারবেন।',
-    badge: 'পেন্সিল টুল',
+    title: 'লেয়ার ও ড্র্যাগ/পেস্ট ছবি',
+    desc: 'বামের "লেয়ার" মেনু থেকে সব এলিমেন্ট উপর-নিচ ও কাস্টমাইজ করুন, অথবা কার্ডে সরাসরি ছবি ড্র্যাগ বা Ctrl+V দিয়ে পেস্ট করুন।',
+    badge: 'লেয়ার + Ctrl+V',
   },
   {
     title: 'অফলাইনেও অটো-সেভ নিরাপদ',
@@ -124,42 +144,29 @@ const QUICK_TIPS = [
 ];
 
 export const LearnPage: React.FC = () => {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [playbackRate, setPlaybackRate] = useState<number>(1);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [activeChapterIndex, setActiveChapterIndex] = useState(0);
+  const [embedParams, setEmbedParams] = useState<{ start: number; autoplay: boolean; nonce: number }>({
+    start: 0,
+    autoplay: false,
+    nonce: 0,
+  });
 
-  // Find active chapter based on current video time
-  let activeChapterIndex = 0;
-  for (let i = 0; i < VIDEO_CHAPTERS.length; i++) {
-    if (currentTime >= VIDEO_CHAPTERS[i].timeSeconds - 0.5) {
-      activeChapterIndex = i;
-    }
-  }
-  const activeChapter = VIDEO_CHAPTERS[activeChapterIndex];
+  const activeChapter = VIDEO_CHAPTERS[activeChapterIndex] || VIDEO_CHAPTERS[0];
 
-  const handleJumpToChapter = (seconds: number) => {
-    const vid = videoRef.current;
-    if (!vid) return;
-    vid.currentTime = seconds;
-    setCurrentTime(seconds);
-    vid.play().catch(() => {});
+  const handleJumpToChapter = (idx: number, seconds: number) => {
+    setActiveChapterIndex(idx);
+    setEmbedParams((prev) => ({
+      start: seconds,
+      autoplay: true,
+      nonce: prev.nonce + 1,
+    }));
   };
 
-  const handleChangeSpeed = (rate: number) => {
-    setPlaybackRate(rate);
-    if (videoRef.current) {
-      videoRef.current.playbackRate = rate;
-    }
-  };
+  const desktopEmbedUrl = `https://www.youtube.com/embed/${DESKTOP_VIDEO_ID}?rel=0&modestbranding=1${
+    embedParams.start > 0 ? `&start=${embedParams.start}` : ''
+  }${embedParams.autoplay ? '&autoplay=1' : ''}`;
 
-  const formatDurationBn = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${toBengaliDigits(String(m).padStart(2, '0'))}:${toBengaliDigits(
-      String(s).padStart(2, '0')
-    )}`;
-  };
+  const mobileEmbedUrl = `https://www.youtube.com/embed/${MOBILE_SHORTS_ID}?rel=0&modestbranding=1`;
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F7F8FA] text-[#0F172A] dark:bg-[#0B0F19] dark:text-slate-100">
@@ -190,13 +197,13 @@ export const LearnPage: React.FC = () => {
             </h1>
             <p className="max-w-2xl text-[14.5px] leading-relaxed text-[#64748B] dark:text-slate-400">
               নিউজ লিংক পেস্ট করা থেকে শুরু করে হাইলাইট, বাংলা ফন্ট, কাস্টম লোগো ও HD ডাউনলোড — ধাপে
-              ধাপে ভিডিও দেখে ও অধ্যায় নির্বাচন করে শিখুন।
+              ধাপে ফুল-কোয়ালিটি ভিডিও দেখে ও অধ্যায় নির্বাচন করে শিখুন।
             </p>
           </div>
 
           <Link
             to="/templates"
-            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#4F46E5] px-5 text-[14px] font-semibold text-white shadow-xs transition-colors hover:bg-[#4338CA] whitespace-nowrap"
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-[#4F46E5] px-5 text-[14px] font-semibold text-white shadow-xs transition-colors hover:bg-[#4338CA]"
           >
             <Wand2 className="h-4 w-4" />
             <span>এখনই শুরু করুন</span>
@@ -205,23 +212,20 @@ export const LearnPage: React.FC = () => {
 
         {/* Main Video Player + Interactive Chapters Grid */}
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-[1.55fr_1fr] lg:items-start">
-          {/* Left: Video Player Card */}
+          {/* Left: Full HD YouTube Player Card */}
           <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm dark:border-[#1F2937] dark:bg-[#111827]">
             <div className="relative aspect-video w-full bg-slate-950">
-              <video
-                ref={videoRef}
-                src={TUTORIAL_VIDEO_SRC}
-                controls
-                playsInline
-                preload="metadata"
-                onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                className="h-full w-full object-contain"
+              <iframe
+                key={`${embedParams.start}-${embedParams.nonce}`}
+                src={desktopEmbedUrl}
+                title="MXB ফটোকার্ড সম্পূর্ণ টিউটোরিয়াল"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                className="h-full w-full border-0"
               />
             </div>
 
-            {/* Video Meta & Playback Speed Bar */}
+            {/* Video Meta & External YouTube Link */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5E7EB] p-4 dark:border-[#1F2937]">
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-2 text-[12px] font-semibold text-[#4F46E5] dark:text-indigo-400">
@@ -236,28 +240,17 @@ export const LearnPage: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#64748B] tabular-nums dark:text-slate-400">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span>{formatDurationBn(currentTime)}</span>
-                </span>
-                <div className="inline-flex rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] p-0.5 text-[11.5px] font-semibold dark:border-[#1F2937] dark:bg-[#0B0F19]">
-                  {[1, 1.25, 1.5].map((rate) => (
-                    <button
-                      key={rate}
-                      type="button"
-                      onClick={() => handleChangeSpeed(rate)}
-                      className={`cursor-pointer rounded-md px-2 py-1 transition-colors ${
-                        playbackRate === rate
-                          ? 'bg-white text-[#4F46E5] shadow-2xs dark:bg-[#111827] dark:text-indigo-300'
-                          : 'text-[#64748B] hover:text-[#0F172A] dark:text-slate-400'
-                      }`}
-                    >
-                      {toBengaliDigits(rate)}x
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <a
+                href={`https://youtu.be/${DESKTOP_VIDEO_ID}${
+                  embedParams.start > 0 ? `?t=${embedParams.start}` : ''
+                }`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] px-3 py-1.5 text-[12px] font-semibold text-[#0F172A] transition-colors hover:bg-slate-100 dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200 dark:hover:bg-gray-800"
+              >
+                <span>YouTube-এ দেখুন</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
             </div>
           </div>
 
@@ -272,11 +265,9 @@ export const LearnPage: React.FC = () => {
                   যেকোনো ধাপে ক্লিক করলেই সেই অংশ শুরু হবে
                 </p>
               </div>
-              {isPlaying && (
-                <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-[#10B981] dark:bg-emerald-950/50">
-                  চলছে
-                </span>
-              )}
+              <span className="rounded-md bg-[#EEF2FF] px-2 py-0.5 text-[11px] font-semibold text-[#4F46E5] dark:bg-indigo-950/60 dark:text-indigo-300">
+                ০৭:০৩ মিনিট
+              </span>
             </div>
 
             <div className="space-y-1.5">
@@ -287,7 +278,7 @@ export const LearnPage: React.FC = () => {
                   <button
                     key={chap.id}
                     type="button"
-                    onClick={() => handleJumpToChapter(chap.timeSeconds)}
+                    onClick={() => handleJumpToChapter(idx, chap.timeSeconds)}
                     className={`flex w-full cursor-pointer items-start gap-3 rounded-xl border p-2.5 text-left transition-all duration-150 ${
                       active
                         ? 'border-[#4F46E5]/50 bg-[#EEF2FF]/75 dark:border-indigo-500/40 dark:bg-indigo-950/40'
@@ -327,6 +318,82 @@ export const LearnPage: React.FC = () => {
               })}
             </div>
           </aside>
+        </section>
+
+        {/* Dedicated Mobile Tutorial Section (YouTube Shorts 9:16) */}
+        <section className="mt-12 overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm sm:p-8 dark:border-[#1F2937] dark:bg-[#111827]">
+          <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-[1.2fr_auto]">
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] px-3 py-1 text-[12px] font-semibold text-[#4F46E5] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-indigo-400">
+                  <Smartphone className="h-3.5 w-3.5" />
+                  <span>মোবাইল ইউজার গাইড</span>
+                </div>
+                <h2 className="text-[22px] font-bold text-[#0F172A] sm:text-[26px] dark:text-white">
+                  মোবাইল থেকে কার্ড বানানোর নিয়ম
+                </h2>
+                <p className="max-w-xl text-[14px] leading-relaxed text-[#64748B] dark:text-slate-400">
+                  কম্পিউটার ছাড়াই আপনার স্মার্টফোন থেকে কয়েক সেকেন্ডেই প্রফেশনাল নিউজ ফটো কার্ড
+                  তৈরি করুন। নিচের শর্টস ভিডিওটিতে পুরো মোবাইল workflow দেখানো হয়েছে।
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {MOBILE_STEPS.map((item) => (
+                  <div
+                    key={item.step}
+                    className="flex items-start gap-3.5 rounded-xl border border-[#E5E7EB] bg-[#F7F8FA] p-3.5 dark:border-[#1F2937] dark:bg-[#0B0F19]"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#4F46E5] text-[13px] font-bold text-white">
+                      {item.step}
+                    </span>
+                    <div>
+                      <h3 className="text-[14.5px] font-bold text-[#0F172A] dark:text-slate-100">
+                        {item.title}
+                      </h3>
+                      <p className="mt-0.5 text-[12.5px] leading-relaxed text-[#64748B] dark:text-slate-400">
+                        {item.desc}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <Link
+                  to="/templates"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#4F46E5] px-4 text-[13.5px] font-semibold text-white transition-colors hover:bg-[#4338CA]"
+                >
+                  <span>মোবাইলে কার্ড তৈরি করুন</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <a
+                  href={`https://youtube.com/shorts/${MOBILE_SHORTS_ID}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-4 text-[13px] font-semibold text-[#0F172A] transition-colors hover:bg-slate-50 dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200 dark:hover:bg-gray-800"
+                >
+                  <span>YouTube Shorts-এ দেখুন</span>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Vertical 9:16 Shorts Player */}
+            <div className="mx-auto w-full max-w-[300px] sm:max-w-[320px]">
+              <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-slate-950 shadow-lg ring-1 ring-black/5 dark:border-[#1F2937] dark:ring-white/10">
+                <div className="aspect-[9/16] w-full">
+                  <iframe
+                    src={mobileEmbedUrl}
+                    title="মোবাইল থেকে কার্ড বানানোর নিয়ম"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    className="h-full w-full border-0"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Pro Tips & Keyboard Shortcuts Grid */}

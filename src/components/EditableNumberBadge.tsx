@@ -105,7 +105,7 @@ export const EditableNumberBadge: React.FC<EditableNumberBadgeProps> = ({
   if (editing) {
     return (
       <div
-        className={`inline-flex items-center rounded-md border border-[#4F46E5] bg-white px-1.5 py-0.5 ring-2 ring-[#4F46E5]/20 dark:bg-[#0B0F19] ${className}`}
+        className={`inline-flex items-center rounded-md border border-[#4F46E5] bg-white px-1.5 py-0.5 ring-2 ring-[#4F46E5]/20 max-md:min-h-[44px] max-md:px-2.5 dark:bg-[#0B0F19] ${className}`}
       >
         <input
           ref={inputRef}
@@ -117,10 +117,10 @@ export const EditableNumberBadge: React.FC<EditableNumberBadgeProps> = ({
           onBlur={commitDraft}
           onKeyDown={handleKeyDown}
           onMouseDown={(e) => e.stopPropagation()}
-          className="w-[42px] bg-transparent text-center text-[12px] font-semibold text-[#0F172A] tabular-nums focus:outline-none dark:text-slate-100"
+          className="w-[42px] bg-transparent text-center text-[12px] font-semibold text-[#0F172A] tabular-nums focus:outline-none max-md:w-[54px] max-md:text-[16px] dark:text-slate-100"
         />
         {suffix && (
-          <span className="text-[11px] font-semibold text-[#64748B] select-none">{suffix}</span>
+          <span className="text-[11px] font-semibold text-[#64748B] select-none max-md:text-xs">{suffix}</span>
         )}
       </div>
     );
@@ -140,7 +140,7 @@ export const EditableNumberBadge: React.FC<EditableNumberBadgeProps> = ({
       }}
       title="ক্লিক করে সরাসরি সংখ্যা লিখুন"
       aria-label={ariaLabel ? `${ariaLabel}: ${label} (ক্লিক করে সংখ্যা লিখুন)` : undefined}
-      className={`inline-flex min-w-[46px] cursor-text items-center justify-center rounded-md border border-[#E5E7EB] bg-[#F7F8FA] px-2 py-0.5 text-[12px] font-semibold text-[#0F172A] tabular-nums transition-colors hover:border-[#4F46E5]/70 hover:bg-white dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200 dark:hover:border-indigo-500/70 ${className}`}
+      className={`inline-flex min-w-[46px] cursor-text items-center justify-center rounded-md border border-[#E5E7EB] bg-[#F7F8FA] px-2 py-0.5 text-[12px] font-semibold text-[#0F172A] tabular-nums transition-colors hover:border-[#4F46E5]/70 hover:bg-white max-md:min-h-[44px] max-md:min-w-[56px] max-md:px-3 max-md:text-sm dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200 dark:hover:border-indigo-500/70 ${className}`}
     >
       {label}
     </button>

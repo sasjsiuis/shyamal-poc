@@ -2,8 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   ClipboardPaste,
+  Contrast,
   Hand,
   ImagePlus,
+  Maximize2,
   Pencil,
   Redo2,
   RotateCcw,
@@ -21,6 +23,11 @@ import { useToast } from '../components/Toast';
 import { EditorRightPanel, type ParsedWord } from '../components/editor/EditorRightPanel';
 import { EDITOR_TABS, EditorSidebar, type EditorTabId } from '../components/editor/EditorSidebar';
 import { EditorTopBar, type AutoSaveStatus } from '../components/editor/EditorTopBar';
+import { MobileBottomSheet, type MobileSheetSnap } from '../components/editor/MobileBottomSheet';
+import { MobileFullscreenPreviewModal } from '../components/editor/MobileFullscreenPreviewModal';
+import { MobileLayersPanel } from '../components/editor/MobileLayersPanel';
+import { MobilePanels } from '../components/editor/MobilePanels';
+import { MobileUrlModal } from '../components/editor/MobileUrlModal';
 import { ALL_TEMPLATES, BUILTIN_FONTS, PSD_GREEN_TEMPLATE, PSD_MAROON_TEMPLATE } from '../data/templates';
 import type {
   CustomTextItem,
@@ -108,7 +115,33 @@ export const EditorPage: React.FC = () => {
 
   // Navigation / Drawer & Stage Pan/Zoom state
   const [desktopTab, setDesktopTab] = useState<EditorTabId>('text');
-  const [mobileSheetTab, setMobileSheetTab] = useState<EditorTabId | null>('text');
+  const [mobileSheetTab, setMobileSheetTab] = useState<EditorTabId | null>(null);
+  const [mobileSheetSnap, setMobileSheetSnap] = useState<MobileSheetSnap>('default');
+  const [showMobileHint, setShowMobileHint] = useState<boolean>(true);
+  const [mobileUrlModalOpen, setMobileUrlModalOpen] = useState<boolean>(false);
+  const [mobileFullscreenUrl, setMobileFullscreenUrl] = useState<string | null>(null);
+  const [isBeforeAfterPressed, setIsBeforeAfterPressed] = useState<boolean>(false);
+  const [canvasFeedbackPill, setCanvasFeedbackPill] = useState<string | null>(null);
+  const [outlineLayerId, setOutlineLayerId] = useState<string | null>(null);
+  const outlineTimerRef = useRef<number | null>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
+
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+  const [mobileViewportSize, setMobileViewportSize] = useState<{ width: number; height: number }>(() =>
+    typeof window !== 'undefined'
+      ? {
+          width: window.visualViewport?.width ?? window.innerWidth,
+          height: window.visualViewport?.height ?? window.innerHeight,
+        }
+      : { width: 390, height: 844 }
+  );
+  const [isMobileSheetInputFocused, setIsMobileSheetInputFocused] = useState<boolean>(false);
+  const initialMobileHeightRef = useRef<number>(
+    typeof window !== 'undefined' ? window.visualViewport?.height ?? window.innerHeight : 844
+  );
+
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [canvasZoomMode, setCanvasZoomMode] = useState<'fit' | 'custom'>('fit');
   const [canvasZoomPercent, setCanvasZoomPercent] = useState<number>(100);
@@ -118,6 +151,10 @@ export const EditorPage: React.FC = () => {
   const [isHandMode, setIsHandMode] = useState<boolean>(false);
   const [isPanningStage, setIsPanningStage] = useState<boolean>(false);
   const stageMainRef = useRef<HTMLElement | null>(null);
+  const [stageRect, setStageRect] = useState<{ width: number; height: number }>({
+    width: 390,
+    height: 420,
+  });
   const stagePanRef = useRef<{
     active: boolean;
     startX: number;
@@ -133,13 +170,16 @@ export const EditorPage: React.FC = () => {
   });
   const pinchRef = useRef<{
     active: boolean;
+    target: 'stage' | 'photo';
     initialDist: number;
     initialZoom: number;
   }>({
     active: false,
+    target: 'stage',
     initialDist: 0,
     initialZoom: 100,
   });
+  const lastCanvasTapRef = useRef<number>(0);
 
   // URL & Auto-extraction state
   const [newsUrl, setNewsUrl] = useState('');
@@ -203,9 +243,14 @@ export const EditorPage: React.FC = () => {
   );
 
   const [headline, setHeadline] = useState(initialDefaults.headline);
+  const [renderHeadline, setRenderHeadline] = useState(initialDefaults.headline);
+  const [headlineAlignOverride, setHeadlineAlignOverride] = useState<
+    'left' | 'center' | 'right' | undefined
+  >(undefined);
   const [highlights, setHighlights] = useState<HighlightRange[]>(initialDefaults.highlights);
   const [selectionHint, setSelectionHint] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mobileTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const selectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
   const [highlightTab, setHighlightTab] = useState<'words' | 'manual'>('words');
 
@@ -226,6 +271,7 @@ export const EditorPage: React.FC = () => {
 
   const [photoSrc, setPhotoSrc] = useState<string>(DEFAULT_PHOTO_SRC);
   const [photoImg, setPhotoImg] = useState<HTMLImageElement | null>(null);
+  const [defaultPhotoImg, setDefaultPhotoImg] = useState<HTMLImageElement | null>(null);
   const [photoZoom, setPhotoZoom] = useState<number>(1);
   const [photoPanX, setPhotoPanX] = useState<number>(0);
   const [photoPanY, setPhotoPanY] = useState<number>(0);
@@ -248,6 +294,7 @@ export const EditorPage: React.FC = () => {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [layerOpacity, setLayerOpacity] = useState<Record<string, number>>({});
   const [layerLocks, setLayerLocks] = useState<Record<string, boolean>>({});
+  const [layerNames, setLayerNames] = useState<Record<string, string>>({});
   const [selectedLayerId, setSelectedLayerId] = useState<string>('headline');
   const [isStageDragOver, setIsStageDragOver] = useState<boolean>(false);
   const stageDragDepthRef = useRef<number>(0);
@@ -638,9 +685,106 @@ export const EditorPage: React.FC = () => {
       if (!cancelled) setOfficialLogoImg(img);
     };
     img.src = '/assets/shyamal_sylhet_logo.png';
+
+    const defPhoto = new Image();
+    defPhoto.crossOrigin = 'anonymous';
+    defPhoto.onload = () => {
+      if (!cancelled) setDefaultPhotoImg(defPhoto);
+    };
+    defPhoto.src = DEFAULT_PHOTO_SRC;
+
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Track mobile viewport dimensions, visualViewport keyboard resize, and stage box via ResizeObserver
+  useEffect(() => {
+    const syncViewport = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobileViewport(mobile);
+      const vv = window.visualViewport;
+      const w = Math.round(vv?.width ?? window.innerWidth);
+      const h = Math.round(vv?.height ?? window.innerHeight);
+      if (mobile && h > initialMobileHeightRef.current) {
+        initialMobileHeightRef.current = h;
+      }
+      setMobileViewportSize({ width: w, height: h });
+    };
+
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('scroll', syncViewport);
+
+    const onFocusChange = () => {
+      const el = document.activeElement as HTMLElement | null;
+      const insideSheet = Boolean(
+        el &&
+          (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') &&
+          el.closest('section[aria-label="মোবাইল এডিটর সেটিংস"]')
+      );
+      setIsMobileSheetInputFocused(insideSheet);
+    };
+    const onFocusOut = () => {
+      window.setTimeout(onFocusChange, 40);
+    };
+    window.addEventListener('focusin', onFocusChange);
+    window.addEventListener('focusout', onFocusOut);
+
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('scroll', syncViewport);
+      window.removeEventListener('focusin', onFocusChange);
+      window.removeEventListener('focusout', onFocusOut);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = stageMainRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setStageRect({ width: Math.round(width), height: Math.round(height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Debounce headline typing (~100ms) to keep typing responsive on mobile without blocking on 2000px canvas redraws
+  useEffect(() => {
+    if (headline === renderHeadline) return;
+    const timer = window.setTimeout(() => {
+      setRenderHeadline(headline);
+    }, 95);
+    return () => window.clearTimeout(timer);
+  }, [headline, renderHeadline]);
+
+  const triggerMobileFeedback = useCallback((message: string, layerId?: string) => {
+    if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
+    setCanvasFeedbackPill(message);
+    feedbackTimerRef.current = window.setTimeout(() => {
+      setCanvasFeedbackPill(null);
+    }, 1800);
+
+    if (layerId) {
+      if (outlineTimerRef.current) window.clearTimeout(outlineTimerRef.current);
+      setOutlineLayerId(layerId);
+      outlineTimerRef.current = window.setTimeout(() => {
+        setOutlineLayerId(null);
+      }, 600);
+    }
+  }, []);
+
+  const flashOutlineLayer = useCallback((layerId: string) => {
+    if (outlineTimerRef.current) window.clearTimeout(outlineTimerRef.current);
+    setOutlineLayerId(layerId);
+    outlineTimerRef.current = window.setTimeout(() => {
+      setOutlineLayerId(null);
+    }, 600);
   }, []);
 
   // Preload extra image layers
@@ -714,6 +858,7 @@ export const EditorPage: React.FC = () => {
     newsUrl: string;
     selectedTemplate: TemplateConfig;
     headline: string;
+    headlineAlignOverride?: 'left' | 'center' | 'right';
     highlights: HighlightRange[];
     lineMode: LineMode;
     fontSizePercent: number;
@@ -736,6 +881,7 @@ export const EditorPage: React.FC = () => {
     layerVisibility: Record<string, boolean>;
     layerOpacity: Record<string, number>;
     layerLocks: Record<string, boolean>;
+    layerNames: Record<string, string>;
     templateOverrides: Record<string, TemplateOverride>;
   };
 
@@ -744,6 +890,7 @@ export const EditorPage: React.FC = () => {
       newsUrl,
       selectedTemplate,
       headline,
+      headlineAlignOverride,
       highlights,
       lineMode,
       fontSizePercent,
@@ -766,12 +913,14 @@ export const EditorPage: React.FC = () => {
       layerVisibility,
       layerOpacity,
       layerLocks,
+      layerNames,
       templateOverrides,
     }),
     [
       newsUrl,
       selectedTemplate,
       headline,
+      headlineAlignOverride,
       highlights,
       lineMode,
       fontSizePercent,
@@ -794,6 +943,7 @@ export const EditorPage: React.FC = () => {
       layerVisibility,
       layerOpacity,
       layerLocks,
+      layerNames,
       templateOverrides,
     ]
   );
@@ -814,6 +964,7 @@ export const EditorPage: React.FC = () => {
     a.selectedTemplate.id === b.selectedTemplate.id &&
     a.selectedTemplate.overlayUrl === b.selectedTemplate.overlayUrl &&
     a.headline === b.headline &&
+    a.headlineAlignOverride === b.headlineAlignOverride &&
     a.lineMode === b.lineMode &&
     a.fontSizePercent === b.fontSizePercent &&
     a.lineGapPercent === b.lineGapPercent &&
@@ -841,6 +992,7 @@ export const EditorPage: React.FC = () => {
     JSON.stringify(a.layerVisibility) === JSON.stringify(b.layerVisibility) &&
     JSON.stringify(a.layerOpacity) === JSON.stringify(b.layerOpacity) &&
     JSON.stringify(a.layerLocks) === JSON.stringify(b.layerLocks) &&
+    JSON.stringify(a.layerNames) === JSON.stringify(b.layerNames) &&
     JSON.stringify(a.highlights) === JSON.stringify(b.highlights) &&
     JSON.stringify(a.templateOverrides) === JSON.stringify(b.templateOverrides);
 
@@ -852,6 +1004,8 @@ export const EditorPage: React.FC = () => {
     setNewsUrl(snap.newsUrl);
     setSelectedTemplate(snap.selectedTemplate);
     setHeadline(snap.headline);
+    setRenderHeadline(snap.headline);
+    setHeadlineAlignOverride(snap.headlineAlignOverride);
     setHighlights(snap.highlights);
     setLineMode(snap.lineMode);
     setFontSizePercent(snap.fontSizePercent);
@@ -874,6 +1028,7 @@ export const EditorPage: React.FC = () => {
     setLayerVisibility(snap.layerVisibility);
     setLayerOpacity(snap.layerOpacity);
     setLayerLocks(snap.layerLocks);
+    setLayerNames(snap.layerNames || {});
     setTemplateOverrides(snap.templateOverrides);
     window.setTimeout(() => {
       isApplyingHistoryRef.current = false;
@@ -1094,6 +1249,8 @@ export const EditorPage: React.FC = () => {
       setNewsUrl(st.newsUrl || '');
       lastFetchedUrlRef.current = (st.newsUrl || '').trim();
       setHeadline(st.headline);
+      setRenderHeadline(st.headline);
+      setHeadlineAlignOverride(st.headlineAlignOverride);
       setHighlights(st.highlights || []);
       setHighlightTab(st.highlightTab || 'words');
       setLineMode(st.lineMode || 'auto');
@@ -1117,6 +1274,7 @@ export const EditorPage: React.FC = () => {
       setLayerVisibility(st.layerVisibility || {});
       setLayerOpacity(st.layerOpacity || {});
       setLayerLocks(st.layerLocks || {});
+      setLayerNames(st.layerNames || {});
       setExportFormat(st.exportFormat || 'png');
       setExportQuality(st.exportQuality ?? 96);
       if (st.templateOverrides && Object.keys(st.templateOverrides).length > 0) {
@@ -1243,6 +1401,8 @@ export const EditorPage: React.FC = () => {
       ? 'নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস'
       : 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ';
     setHeadline(nextHeadline);
+    setRenderHeadline(nextHeadline);
+    setHeadlineAlignOverride(undefined);
     if (!hasCustomNameRef.current) {
       setProjectName(defaultProjectName(nextHeadline));
     }
@@ -1270,6 +1430,7 @@ export const EditorPage: React.FC = () => {
     setLayerVisibility({});
     setLayerOpacity({});
     setLayerLocks({});
+    setLayerNames({});
     setSelectedLayerId('headline');
     setActiveCustomTextId(null);
     setPendingPencilPoint(null);
@@ -1283,6 +1444,7 @@ export const EditorPage: React.FC = () => {
       selectedTemplateId: selectedTemplate.id,
       customTemplate: selectedTemplate.id.startsWith('custom-') ? selectedTemplate : null,
       headline,
+      headlineAlignOverride,
       highlights,
       highlightTab,
       lineMode,
@@ -1306,6 +1468,7 @@ export const EditorPage: React.FC = () => {
       layerVisibility,
       layerOpacity,
       layerLocks,
+      layerNames,
       exportFormat,
       exportQuality,
       templateOverrides: templateOverrides[selectedTemplate.id]
@@ -1316,6 +1479,7 @@ export const EditorPage: React.FC = () => {
       newsUrl,
       selectedTemplate,
       headline,
+      headlineAlignOverride,
       highlights,
       highlightTab,
       lineMode,
@@ -1339,6 +1503,7 @@ export const EditorPage: React.FC = () => {
       layerVisibility,
       layerOpacity,
       layerLocks,
+      layerNames,
       exportFormat,
       exportQuality,
       templateOverrides,
@@ -1522,65 +1687,110 @@ export const EditorPage: React.FC = () => {
     setCanvasZoomPercent(100);
   }, []);
 
-  // Render Canvas Preview
+  // Render Canvas Preview (rAF-scheduled, debounced headline, supports Before/After compare & active layer outline flash)
   useEffect(() => {
     const canvas = previewCanvasRef.current;
     if (!canvas) return;
 
-    if (canvas.width !== effectiveTemplate.canvasWidth) {
-      canvas.width = effectiveTemplate.canvasWidth;
-    }
-    if (canvas.height !== effectiveTemplate.canvasHeight) {
-      canvas.height = effectiveTemplate.canvasHeight;
-    }
+    const rafId = window.requestAnimationFrame(() => {
+      if (canvas.width !== effectiveTemplate.canvasWidth) {
+        canvas.width = effectiveTemplate.canvasWidth;
+      }
+      if (canvas.height !== effectiveTemplate.canvasHeight) {
+        canvas.height = effectiveTemplate.canvasHeight;
+      }
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    const metrics = renderNewsCard({
-      ctx,
-      template: effectiveTemplate,
-      overlayImg,
-      photoImg,
-      logoImg,
-      officialLogoImg,
-      headline,
-      highlights,
-      lineMode,
-      fontSizePercent,
-      lineGapPercent,
-      font: activeFont,
-      textOffsetX,
-      textOffsetY,
-      textShadow,
-      textColor,
-      highlightColor,
-      photoZoom,
-      photoPanX,
-      photoPanY,
-      logoSettings,
-      subheading,
-      customTexts,
-      activeCustomTextId,
-      extraImages,
-      extraImageEls,
-      activeExtraImageId,
-      layerOrder: resolvedLayerOrder,
-      layerVisibility,
-      layerOpacity,
-      dateTextOverride,
-      isExport: false,
-      snapState,
+      if (isBeforeAfterPressed) {
+        renderNewsCard({
+          ctx,
+          template: selectedTemplate,
+          overlayImg,
+          photoImg: defaultPhotoImg ?? photoImg,
+          logoImg: null,
+          officialLogoImg,
+          headline: initialDefaults.headline,
+          highlights: initialDefaults.highlights,
+          lineMode: 'auto',
+          fontSizePercent: 100,
+          lineGapPercent: 92,
+          font: BUILTIN_FONTS[0],
+          textOffsetX: 0,
+          textOffsetY: 0,
+          textShadow: false,
+          textColor: selectedTemplate.defaultTextColor,
+          highlightColor: selectedTemplate.defaultHighlightColor,
+          photoZoom: 1,
+          photoPanX: 0,
+          photoPanY: 0,
+          logoSettings: initialDefaults.logoSettings,
+          subheading: DEFAULT_SUBHEADING,
+          customTexts: [],
+          extraImages: [],
+          extraImageEls: {},
+          layerVisibility: {},
+          layerOpacity: {},
+          dateTextOverride: '',
+          isExport: false,
+        });
+        return;
+      }
+
+      const metrics = renderNewsCard({
+        ctx,
+        template: effectiveTemplate,
+        overlayImg,
+        photoImg,
+        logoImg,
+        officialLogoImg,
+        headline: renderHeadline,
+        highlights,
+        lineMode,
+        fontSizePercent,
+        lineGapPercent,
+        font: activeFont,
+        textOffsetX,
+        textOffsetY,
+        textShadow,
+        textColor,
+        highlightColor,
+        headlineAlignOverride,
+        photoZoom,
+        photoPanX,
+        photoPanY,
+        logoSettings,
+        subheading,
+        customTexts,
+        activeCustomTextId,
+        extraImages,
+        extraImageEls,
+        activeExtraImageId,
+        layerOrder: resolvedLayerOrder,
+        layerVisibility,
+        layerOpacity,
+        dateTextOverride,
+        isExport: false,
+        snapState,
+        outlineLayerId,
+      });
+
+      layoutMetricsRef.current = metrics;
     });
 
-    layoutMetricsRef.current = metrics;
+    return () => window.cancelAnimationFrame(rafId);
   }, [
     effectiveTemplate,
+    selectedTemplate,
+    initialDefaults,
+    defaultPhotoImg,
+    isBeforeAfterPressed,
     overlayImg,
     photoImg,
     logoImg,
     officialLogoImg,
-    headline,
+    renderHeadline,
     highlights,
     lineMode,
     fontSizePercent,
@@ -1591,6 +1801,7 @@ export const EditorPage: React.FC = () => {
     textShadow,
     textColor,
     highlightColor,
+    headlineAlignOverride,
     photoZoom,
     photoPanX,
     photoPanY,
@@ -1606,6 +1817,7 @@ export const EditorPage: React.FC = () => {
     layerOpacity,
     dateTextOverride,
     snapState,
+    outlineLayerId,
     fontsLoadedTick,
   ]);
 
@@ -2126,6 +2338,9 @@ export const EditorPage: React.FC = () => {
     if (mode === 'none' && headline.trim() && layerVisibility['headline'] !== false) {
       hitLayerId = 'headline';
       mode = 'text';
+    } else if (mode === 'none' && photoImg && layerVisibility['photo'] !== false) {
+      hitLayerId = 'photo';
+      mode = 'photo';
     }
 
     if (hitLayerId) {
@@ -2239,7 +2454,7 @@ export const EditorPage: React.FC = () => {
   };
 
   // Download Card (preserves exact renderNewsCard export logic)
-  const handleDownloadCard = () => {
+  const handleDownloadCard = (alsoNotifySave = false) => {
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = effectiveTemplate.canvasWidth;
     exportCanvas.height = effectiveTemplate.canvasHeight;
@@ -2264,6 +2479,7 @@ export const EditorPage: React.FC = () => {
       textShadow,
       textColor,
       highlightColor,
+      headlineAlignOverride,
       photoZoom,
       photoPanX,
       photoPanY,
@@ -2299,7 +2515,12 @@ export const EditorPage: React.FC = () => {
         window.setTimeout(() => URL.revokeObjectURL(href), 5000);
       }
       setDownloadDone(true);
-      showToast('ডাউনলোড হয়েছে ✓', 'success');
+      if (alsoNotifySave) {
+        performSaveToIndexedDB(false);
+        showToast('আমার কাজ-এ সেভ হয়েছে ✓', 'success');
+      } else {
+        showToast('ডাউনলোড হয়েছে ✓', 'success');
+      }
       window.setTimeout(() => setDownloadDone(false), 2000);
     };
 
@@ -2327,6 +2548,20 @@ export const EditorPage: React.FC = () => {
 
   const activeMobileMeta = EDITOR_TABS.find((t) => t.id === mobileSheetTab);
   const MobileTabIcon = activeMobileMeta?.icon;
+
+  const isMobileKeyboardOpen =
+    isMobileViewport &&
+    isMobileSheetInputFocused &&
+    (mobileViewportSize.height < initialMobileHeightRef.current * 0.8 ||
+      mobileViewportSize.height < 580);
+
+  const mobileFitWidth = useMemo(() => {
+    const availW = Math.max(120, stageRect.width - 24);
+    const availH = Math.max(120, stageRect.height - 16);
+    const ratio =
+      effectiveTemplate.canvasWidth / Math.max(1, effectiveTemplate.canvasHeight);
+    return Math.max(120, Math.min(availW, Math.round(availH * ratio)));
+  }, [stageRect.width, stageRect.height, effectiveTemplate.canvasWidth, effectiveTemplate.canvasHeight]);
 
   const panelProps = {
     headline,
@@ -2360,10 +2595,16 @@ export const EditorPage: React.FC = () => {
     onStartPencilMode: () => {
       setPendingPencilPoint(null);
       setIsPencilTextMode(true);
+      if (isMobileViewport) {
+        setMobileSheetSnap('collapsed');
+      }
     },
     onAddDirectCustomText: () => {
       setPendingPencilPoint({ x: 0.5, y: 0.2 });
       setPendingPencilText('');
+      if (isMobileViewport) {
+        setMobileSheetSnap('collapsed');
+      }
     },
     effectiveTemplate,
     selectedTemplate,
@@ -2400,6 +2641,7 @@ export const EditorPage: React.FC = () => {
       setLineMode('auto');
       setFontSizePercent(100);
       setLineGapPercent(92);
+      setHeadlineAlignOverride(undefined);
       setTextOffsetX(0);
       setTextOffsetY(0);
       setTextShadow(false);
@@ -2440,13 +2682,14 @@ export const EditorPage: React.FC = () => {
     onChangeExportFormat: setExportFormat,
     exportQuality,
     onChangeExportQuality: setExportQuality,
-    onDownload: handleDownloadCard,
+    onDownload: () => handleDownloadCard(false),
     downloadDone,
     // Layers Controls
     resolvedLayerOrder,
     selectedLayerId,
     onSelectLayer: (layerId: string) => {
       setSelectedLayerId(layerId);
+      flashOutlineLayer(layerId);
       if (layerId.startsWith('text:')) {
         setActiveCustomTextId(layerId.slice(5));
       } else {
@@ -2505,6 +2748,7 @@ export const EditorPage: React.FC = () => {
       setLayerVisibility({});
       setLayerOpacity({});
       setLayerLocks({});
+      setLayerNames({});
     },
     onDeleteCustomText: (id: string) => {
       commitHistoryNow();
@@ -2536,13 +2780,17 @@ export const EditorPage: React.FC = () => {
     onSwitchToTemplateTab: () => {
       setDesktopTab('template');
       setMobileSheetTab('template');
+      setMobileSheetSnap('default');
     },
   };
 
   const aspectRatioStyle = `${effectiveTemplate.canvasWidth} / ${effectiveTemplate.canvasHeight}`;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F7F8FA] text-[#0F172A] md:h-screen md:overflow-hidden dark:bg-[#0B0F19] dark:text-slate-100">
+    <div
+      style={isMobileViewport ? { height: `${mobileViewportSize.height}px` } : undefined}
+      className="bg-[#F7F8FA] text-[#0F172A] max-md:grid max-md:w-full max-md:max-w-full max-md:grid-cols-[minmax(0,1fr)] max-md:grid-rows-[auto_minmax(120px,1fr)_auto_auto] max-md:overflow-hidden md:flex md:h-screen md:flex-col md:overflow-hidden dark:bg-[#0B0F19] dark:text-slate-100"
+    >
       {/* Hidden File Inputs */}
       <input
         ref={photoInputRef}
@@ -2583,46 +2831,68 @@ export const EditorPage: React.FC = () => {
       />
 
       {/* Top Bar */}
-      <EditorTopBar
-        templateName={effectiveTemplate.name}
-        projectName={projectName}
-        onRenameProject={(nextName) => {
-          hasCustomNameRef.current = true;
-          setProjectName(nextName);
-        }}
-        saveStatus={saveStatus}
-        lastSavedAt={lastSavedAt}
-        onManualSave={() => performSaveToIndexedDB(true)}
-        newsUrl={newsUrl}
-        onNewsUrlChange={(val) => {
-          if (val.trim() !== lastFetchedUrlRef.current) {
-            lastFetchedUrlRef.current = '';
-            setExtractError(null);
-          }
-          setNewsUrl(val);
-        }}
-        onNewsUrlPaste={handleUrlPaste}
-        onClearNewsUrl={handleClearNewsUrl}
-        onTriggerFetch={() => extractNewsFromUrl(newsUrl, true)}
-        isExtracting={isExtracting}
-        isLikelyValidUrl={isLikelyUrl(newsUrl)}
-        exportFormat={exportFormat}
-        onChangeExportFormat={setExportFormat}
-        onDownload={handleDownloadCard}
-        downloadDone={downloadDone}
-      />
-
-      {/* Main 3-Zone Workspace */}
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        {/* Desktop Left Rail & Mobile Fixed Bottom Bar */}
-        <EditorSidebar
-          activeTab={desktopTab}
-          onSelectTab={(tab) => {
-            setDesktopTab(tab);
-            setMobileSheetTab((prev) => (prev === tab ? null : tab));
+      <div className="max-md:order-1 max-md:min-w-0 max-md:w-full">
+        <EditorTopBar
+          templateName={effectiveTemplate.name}
+          projectName={projectName}
+          onRenameProject={(nextName) => {
+            hasCustomNameRef.current = true;
+            setProjectName(nextName);
           }}
-          onShowShortcuts={() => setShowShortcutsModal(true)}
+          saveStatus={saveStatus}
+          lastSavedAt={lastSavedAt}
+          onManualSave={() => performSaveToIndexedDB(true)}
+          newsUrl={newsUrl}
+          onNewsUrlChange={(val) => {
+            if (val.trim() !== lastFetchedUrlRef.current) {
+              lastFetchedUrlRef.current = '';
+              setExtractError(null);
+            }
+            setNewsUrl(val);
+          }}
+          onNewsUrlPaste={handleUrlPaste}
+          onClearNewsUrl={handleClearNewsUrl}
+          onTriggerFetch={() => extractNewsFromUrl(newsUrl, true)}
+          isExtracting={isExtracting}
+          isLikelyValidUrl={isLikelyUrl(newsUrl)}
+          exportFormat={exportFormat}
+          onChangeExportFormat={setExportFormat}
+          onDownload={() => handleDownloadCard(false)}
+          downloadDone={downloadDone}
+          onUndo={performUndo}
+          onRedo={performRedo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onOpenMobileUrlModal={() => setMobileUrlModalOpen(true)}
         />
+      </div>
+
+      {/* Main 3-Zone Workspace (on mobile uses display:contents so children sit directly in 100dvh grid rows) */}
+      <div className="max-md:contents md:flex md:min-h-0 md:flex-1 md:flex-row">
+        {/* Desktop Left Rail & Mobile Bottom Tab Bar */}
+        <div className="max-md:order-4 max-md:min-w-0 max-md:w-full md:flex md:shrink-0">
+          <EditorSidebar
+            activeTab={desktopTab}
+            mobileActiveTab={mobileSheetTab}
+            hiddenOnMobileKeyboard={isMobileKeyboardOpen}
+            onSelectTab={(tab) => {
+              setDesktopTab(tab);
+              setShowMobileHint(false);
+              setMobileSheetTab((prev) => {
+                if (prev === tab) {
+                  if (mobileSheetSnap === 'collapsed') {
+                    setMobileSheetSnap('default');
+                    return tab;
+                  }
+                  return null;
+                }
+                setMobileSheetSnap('default');
+                return tab;
+              });
+            }}
+            onShowShortcuts={() => setShowShortcutsModal(true)}
+          />
+        </div>
 
         {/* Center Dotted Canvas Stage */}
         <main
@@ -2721,10 +2991,12 @@ export const EditorPage: React.FC = () => {
             if (e.touches.length === 2) {
               const dx = e.touches[0].clientX - e.touches[1].clientX;
               const dy = e.touches[0].clientY - e.touches[1].clientY;
+              const pinchPhoto = isMobileViewport && mobileSheetTab === 'photo';
               pinchRef.current = {
                 active: true,
+                target: pinchPhoto ? 'photo' : 'stage',
                 initialDist: Math.hypot(dx, dy),
-                initialZoom: canvasZoomPercent,
+                initialZoom: pinchPhoto ? photoZoom : canvasZoomPercent,
               };
               stagePanRef.current.active = false;
               setIsPanningStage(false);
@@ -2751,15 +3023,28 @@ export const EditorPage: React.FC = () => {
               const dy = e.touches[0].clientY - e.touches[1].clientY;
               const dist = Math.hypot(dx, dy);
               if (pinchRef.current.initialDist > 10) {
-                const nextZoom = Math.max(
-                  30,
-                  Math.min(
-                    250,
-                    Math.round((pinchRef.current.initialZoom * dist) / pinchRef.current.initialDist)
-                  )
-                );
-                setCanvasZoomMode('custom');
-                setCanvasZoomPercent(nextZoom);
+                if (pinchRef.current.target === 'photo') {
+                  const nextPhotoZoom = Math.max(
+                    0.5,
+                    Math.min(
+                      2.5,
+                      Number(
+                        ((pinchRef.current.initialZoom * dist) / pinchRef.current.initialDist).toFixed(2)
+                      )
+                    )
+                  );
+                  setPhotoZoom(nextPhotoZoom);
+                } else {
+                  const nextZoom = Math.max(
+                    30,
+                    Math.min(
+                      250,
+                      Math.round((pinchRef.current.initialZoom * dist) / pinchRef.current.initialDist)
+                    )
+                  );
+                  setCanvasZoomMode('custom');
+                  setCanvasZoomPercent(nextZoom);
+                }
               }
               return;
             }
@@ -2780,9 +3065,7 @@ export const EditorPage: React.FC = () => {
             stagePanRef.current.active = false;
             setIsPanningStage(false);
           }}
-          className={`canvas-stage-dots relative flex flex-1 flex-col items-center justify-center overflow-hidden px-3 py-3 outline-none sm:p-5 ${
-            mobileSheetTab ? 'max-md:pb-4' : 'max-md:pb-20'
-          } ${
+          className={`canvas-stage-dots relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-3 py-2 outline-none max-md:order-2 max-md:min-w-0 max-md:w-full md:p-5 ${
             isPanningStage
               ? 'cursor-grabbing select-none'
               : isSpaceHeld || isHandMode
@@ -2804,11 +3087,11 @@ export const EditorPage: React.FC = () => {
               </p>
             </div>
           )}
-          {/* Floating Canvas Toolbar Pill */}
+          {/* Desktop-Only Floating Canvas Toolbar Pill */}
           <div
             data-no-stage-wheel="true"
             onMouseDown={(e) => e.stopPropagation()}
-            className="relative z-20 mb-3 flex flex-wrap items-center justify-center gap-1 rounded-xl border border-[#E5E7EB] bg-white/95 px-2 py-1 text-xs shadow-sm backdrop-blur-xs dark:border-[#1F2937] dark:bg-[#111827]/95"
+            className="relative z-20 mb-3 hidden flex-wrap items-center justify-center gap-1 rounded-xl border border-[#E5E7EB] bg-white/95 px-2 py-1 text-xs shadow-sm backdrop-blur-xs md:flex dark:border-[#1F2937] dark:bg-[#111827]/95"
           >
             <button
               type="button"
@@ -2945,20 +3228,26 @@ export const EditorPage: React.FC = () => {
           {/* Live Canvas Wrapper (Pannable + Zoomable Stage) */}
           <div
             data-stage-area="true"
-            className="flex w-full flex-1 items-center justify-center"
+            className="relative flex min-h-0 w-full flex-1 items-center justify-center"
           >
             <div
               className={`relative shrink-0 overflow-hidden rounded-xl bg-white shadow-[0_12px_36px_rgba(15,23,42,0.12)] dark:shadow-[0_14px_40px_rgba(0,0,0,0.45)] ${
                 isPencilTextMode ? 'ring-2 ring-[#4F46E5]' : 'ring-1 ring-black/5 dark:ring-white/10'
-              } ${isPanningStage ? 'transition-none' : 'transition-shadow'}`}
+              } ${
+                isPanningStage || pinchRef.current.active
+                  ? 'transition-none'
+                  : 'transition-[width,height,box-shadow] duration-200 ease-out'
+              }`}
               style={{
                 aspectRatio: aspectRatioStyle,
                 width:
                   canvasZoomMode === 'fit'
-                    ? mobileSheetTab
-                      ? 'min(100%, 310px, 36vh)'
+                    ? isMobileViewport
+                      ? `${mobileFitWidth}px`
                       : 'min(100%, 520px, calc(100vh - 215px))'
-                    : `${Math.round((520 * canvasZoomPercent) / 100)}px`,
+                    : isMobileViewport
+                      ? `${Math.round((mobileFitWidth * canvasZoomPercent) / 100)}px`
+                      : `${Math.round((520 * canvasZoomPercent) / 100)}px`,
                 transform: `translate3d(${stagePanX}px, ${stagePanY}px, 0)`,
               }}
             >
@@ -2978,6 +3267,20 @@ export const EditorPage: React.FC = () => {
                 onMouseLeave={endCanvasDrag}
                 onTouchStart={(e) => {
                   if (isHandMode || e.touches.length !== 1) return;
+                  const now = Date.now();
+                  if (!isPencilTextMode && now - lastCanvasTapRef.current < 260) {
+                    lastCanvasTapRef.current = 0;
+                    if (canvasZoomMode === 'fit') {
+                      setCanvasZoomMode('custom');
+                      setCanvasZoomPercent(145);
+                      triggerMobileFeedback('জুম: ১৪৫%');
+                    } else {
+                      resetStageView();
+                      triggerMobileFeedback('জুম: ফিট');
+                    }
+                    return;
+                  }
+                  lastCanvasTapRef.current = now;
                   startCanvasDrag(e.touches[0].clientX, e.touches[0].clientY);
                 }}
                 onTouchMove={(e) => {
@@ -2999,6 +3302,60 @@ export const EditorPage: React.FC = () => {
                 }`}
               />
 
+              {/* Mobile Live Feedback Pill on Card Corner */}
+              {isMobileViewport && canvasFeedbackPill && (
+                <div className="pointer-events-none absolute bottom-2 left-2 z-20 rounded-lg bg-[#0F172A]/88 px-2.5 py-1 text-xs font-semibold text-white shadow-md backdrop-blur-xs">
+                  {canvasFeedbackPill}
+                </div>
+              )}
+
+              {/* Mobile Before/After & Fullscreen Floating Corner Controls (44x44 targets) */}
+              {isMobileViewport && !isMobileKeyboardOpen && (
+                <div
+                  className="absolute bottom-2 right-2 z-20 flex items-center gap-1.5 md:hidden"
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    aria-label="আগে এবং পরে তুলনা"
+                    title="আগে/পরে দেখুন (চেপে ধরুন)"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      setIsBeforeAfterPressed(true);
+                    }}
+                    onPointerUp={() => setIsBeforeAfterPressed(false)}
+                    onPointerLeave={() => setIsBeforeAfterPressed(false)}
+                    onPointerCancel={() => setIsBeforeAfterPressed(false)}
+                    className={`flex h-11 w-11 cursor-pointer items-center justify-center rounded-full shadow-md backdrop-blur-xs transition-colors ${
+                      isBeforeAfterPressed
+                        ? 'bg-[#4F46E5] text-white'
+                        : 'bg-white/92 text-[#0F172A] dark:bg-[#111827]/90 dark:text-slate-100'
+                    }`}
+                  >
+                    <Contrast className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="ফুলস্ক্রিন প্রিভিউ"
+                    title="বড় করে দেখুন"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const c = previewCanvasRef.current;
+                      if (c) {
+                        try {
+                          setMobileFullscreenUrl(c.toDataURL('image/png'));
+                        } catch {
+                          // fallback
+                        }
+                      }
+                    }}
+                    className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-white/92 text-[#0F172A] shadow-md backdrop-blur-xs active:bg-slate-100 dark:bg-[#111827]/90 dark:text-slate-100"
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+
               {isPencilTextMode && (
                 <div className="pointer-events-none absolute inset-x-2 top-2 flex items-center justify-center">
                   <span className="rounded-lg bg-[#0F172A]/90 px-3 py-1.5 text-center text-xs font-semibold text-white shadow-md backdrop-blur-xs">
@@ -3007,6 +3364,17 @@ export const EditorPage: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* First-Load One-Time Dismissible Hint on Mobile when no sheet is open */}
+            {isMobileViewport && !mobileSheetTab && showMobileHint && (
+              <button
+                type="button"
+                onClick={() => setShowMobileHint(false)}
+                className="absolute bottom-2 left-1/2 z-10 min-h-[44px] -translate-x-1/2 cursor-pointer whitespace-nowrap rounded-full bg-[#0F172A]/85 px-4 text-xs font-semibold text-white shadow-lg backdrop-blur-xs md:hidden"
+              >
+                নিচের টুল থেকে এডিট করুন ↓
+              </button>
+            )}
           </div>
 
           {/* Inline Floating Text Creator (Pencil Click on Canvas) */}
@@ -3025,7 +3393,7 @@ export const EditorPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPendingPencilPoint(null)}
-                  className="cursor-pointer rounded p-1 text-[#64748B] hover:bg-slate-100 dark:hover:bg-gray-800"
+                  className="flex cursor-pointer items-center justify-center rounded p-1 text-[#64748B] hover:bg-slate-100 max-md:min-h-[44px] max-md:min-w-[44px] dark:hover:bg-gray-800"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -3037,7 +3405,7 @@ export const EditorPage: React.FC = () => {
                 value={pendingPencilText}
                 onChange={(e) => setPendingPencilText(e.target.value)}
                 placeholder="যেমন: ফাইল ছবি / বিশেষ প্রতিনিধি / তারিখ..."
-                className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#0F172A] focus:border-[#4F46E5] focus:outline-none dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-100"
+                className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#0F172A] focus:border-[#4F46E5] focus:outline-none max-md:h-11 max-md:text-[16px] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-100"
               />
 
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3051,7 +3419,7 @@ export const EditorPage: React.FC = () => {
                       key={preset.size}
                       type="button"
                       onClick={() => setPendingPencilSize(preset.size)}
-                      className={`cursor-pointer rounded-md px-2.5 py-1 text-[11px] font-semibold ${
+                      className={`cursor-pointer rounded-md px-2.5 py-1 text-[11px] font-semibold max-md:min-h-[44px] max-md:px-3 max-md:text-xs ${
                         pendingPencilSize === preset.size
                           ? 'bg-[#4F46E5] text-white'
                           : 'border border-[#E5E7EB] bg-[#F7F8FA] text-[#0F172A] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200'
@@ -3076,7 +3444,7 @@ export const EditorPage: React.FC = () => {
                     value={pendingPencilColor}
                     onChange={(e) => setPendingPencilColor(e.target.value)}
                     title="টেক্সটের রং"
-                    className="swatch-picker h-6 w-7"
+                    className="swatch-picker h-6 w-7 max-md:h-11 max-md:w-11"
                   />
                   {(
                     [
@@ -3094,7 +3462,7 @@ export const EditorPage: React.FC = () => {
                         else if (bgOpt.val === 'rgba(15, 23, 42, 0.72)')
                           setPendingPencilColor('#ffffff');
                       }}
-                      className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-semibold ${
+                      className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-semibold max-md:min-h-[44px] max-md:px-3 max-md:text-xs ${
                         pendingPencilBg === bgOpt.val
                           ? 'bg-[#F59E0B] text-slate-950'
                           : 'border border-[#E5E7EB] bg-[#F7F8FA] text-[#0F172A] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200'
@@ -3110,14 +3478,14 @@ export const EditorPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPendingPencilPoint(null)}
-                  className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 font-semibold text-[#64748B] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-300"
+                  className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 font-semibold text-[#64748B] max-md:min-h-[44px] max-md:px-4 dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-300"
                 >
                   বাতিল
                 </button>
                 <button
                   type="submit"
                   disabled={!pendingPencilText.trim()}
-                  className="cursor-pointer rounded-lg bg-[#4F46E5] px-3.5 py-1.5 font-semibold text-white hover:bg-[#4338CA] disabled:opacity-50"
+                  className="cursor-pointer rounded-lg bg-[#4F46E5] px-3.5 py-1.5 font-semibold text-white hover:bg-[#4338CA] disabled:opacity-50 max-md:min-h-[44px] max-md:px-4"
                 >
                   স্ক্রিনে বসান
                 </button>
@@ -3147,7 +3515,7 @@ export const EditorPage: React.FC = () => {
                           )
                         )
                       }
-                      className="h-8 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] px-2.5 text-xs font-semibold text-[#0F172A] focus:border-[#4F46E5] focus:outline-none dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-100"
+                      className="h-8 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] px-2.5 text-xs font-semibold text-[#0F172A] focus:border-[#4F46E5] focus:outline-none max-md:h-11 max-md:text-[16px] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-100"
                     />
                     <button
                       type="button"
@@ -3157,7 +3525,7 @@ export const EditorPage: React.FC = () => {
                         setActiveCustomTextId(null);
                       }}
                       title="এই টেক্সট মুছুন"
-                      className="cursor-pointer rounded-lg border border-red-200 bg-red-50 p-1.5 text-[#EF4444] hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50"
+                      className="flex cursor-pointer items-center justify-center rounded-lg border border-red-200 bg-red-50 p-1.5 text-[#EF4444] hover:bg-red-100 max-md:min-h-[44px] max-md:min-w-[44px] dark:border-red-900 dark:bg-red-950/50"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -3165,14 +3533,14 @@ export const EditorPage: React.FC = () => {
                       type="button"
                       onClick={() => setActiveCustomTextId(null)}
                       title="সিলেকশন বন্ধ"
-                      className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-white p-1.5 text-[#64748B] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-300"
+                      className="flex cursor-pointer items-center justify-center rounded-lg border border-[#E5E7EB] bg-white p-1.5 text-[#64748B] max-md:min-h-[44px] max-md:min-w-[44px] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-300"
                     >
                       <Check className="h-3.5 w-3.5" />
                     </button>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-semibold text-[#64748B] dark:text-slate-300">
+                    <span className="text-[11px] font-semibold text-[#64748B] max-md:text-xs dark:text-slate-300">
                       সাইজ
                     </span>
                     <EditableNumberBadge
@@ -3214,7 +3582,7 @@ export const EditorPage: React.FC = () => {
                           )
                         )
                       }
-                      className="swatch-picker h-6 w-7"
+                      className="swatch-picker h-6 w-7 max-md:h-11 max-md:w-11"
                       title="রং পরিবর্তন"
                     />
                   </div>
@@ -3244,7 +3612,7 @@ export const EditorPage: React.FC = () => {
                           setDesktopTab('layers');
                           setMobileSheetTab('layers');
                         }}
-                        className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] px-2 py-1 text-[11px] font-semibold text-[#4F46E5] hover:bg-indigo-50 dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-indigo-300"
+                        className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-[#F7F8FA] px-2 py-1 text-[11px] font-semibold text-[#4F46E5] hover:bg-indigo-50 max-md:min-h-[44px] max-md:px-3 max-md:text-xs dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-indigo-300"
                       >
                         সব অপশন
                       </button>
@@ -3256,7 +3624,7 @@ export const EditorPage: React.FC = () => {
                           setSelectedLayerId('headline');
                         }}
                         title="এই ছবি লেয়ার মুছুন"
-                        className="cursor-pointer rounded-lg border border-red-200 bg-red-50 p-1.5 text-[#EF4444] hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50"
+                        className="flex cursor-pointer items-center justify-center rounded-lg border border-red-200 bg-red-50 p-1.5 text-[#EF4444] hover:bg-red-100 max-md:min-h-[44px] max-md:min-w-[44px] dark:border-red-900 dark:bg-red-950/50"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -3264,7 +3632,7 @@ export const EditorPage: React.FC = () => {
                         type="button"
                         onClick={() => setSelectedLayerId('headline')}
                         title="সিলেকশন বন্ধ"
-                        className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-white p-1.5 text-[#64748B] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-300"
+                        className="flex cursor-pointer items-center justify-center rounded-lg border border-[#E5E7EB] bg-white p-1.5 text-[#64748B] max-md:min-h-[44px] max-md:min-w-[44px] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-300"
                       >
                         <Check className="h-3.5 w-3.5" />
                       </button>
@@ -3272,7 +3640,7 @@ export const EditorPage: React.FC = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-semibold text-[#64748B] dark:text-slate-300">
+                    <span className="text-[11px] font-semibold text-[#64748B] max-md:text-xs dark:text-slate-300">
                       প্রস্থ
                     </span>
                     <EditableNumberBadge
@@ -3310,7 +3678,7 @@ export const EditorPage: React.FC = () => {
             })()}
         </main>
 
-        {/* Desktop Right Control Panel (360px) */}
+        {/* Desktop Right Control Panel (360px) — Unchanged */}
         <aside
           aria-label="এডিটর কন্ট্রোল প্যানেল"
           className="hidden w-[320px] shrink-0 overflow-y-auto border-l border-[#E5E7EB] bg-white p-4 md:block lg:w-[360px] dark:border-[#1F2937] dark:bg-[#111827]"
@@ -3319,36 +3687,227 @@ export const EditorPage: React.FC = () => {
         </aside>
       </div>
 
-      {/* Mobile Slide-Up Sheet (<768px) */}
-      {mobileSheetTab && (
-        <section
-          aria-label="মোবাইল এডিটর সেটিংস"
-          className="fixed inset-x-0 bottom-[55px] z-30 flex max-h-[50vh] flex-col rounded-t-2xl border-t border-[#E5E7EB] bg-white shadow-[0_-10px_30px_rgba(15,23,42,0.12)] md:hidden dark:border-[#1F2937] dark:bg-[#111827]"
+      {/* Mobile Grid-Row Bottom Sheet (<768px) */}
+      <div className="max-md:order-3 max-md:min-w-0 max-md:w-full md:hidden">
+        <MobileBottomSheet
+          isOpen={Boolean(mobileSheetTab)}
+          title={activeMobileMeta?.label || ''}
+          icon={MobileTabIcon}
+          snapState={mobileSheetSnap}
+          onSnapChange={setMobileSheetSnap}
+          onClose={() => setMobileSheetTab(null)}
+          viewportHeight={mobileViewportSize.height}
+          isKeyboardOpen={isMobileKeyboardOpen}
+          onKeyboardDone={() => {
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur();
+            }
+            setIsMobileSheetInputFocused(false);
+          }}
         >
-          {/* Sheet Handle & Header */}
-          <div className="flex shrink-0 flex-col items-center border-b border-[#E5E7EB] px-4 pb-2.5 pt-2 dark:border-[#1F2937]">
-            <span className="mb-1.5 h-1 w-9 rounded-full bg-slate-300 dark:bg-gray-700" />
-            <div className="flex w-full items-center justify-between">
-              <div className="flex items-center gap-2 text-[14px] font-bold text-[#0F172A] dark:text-slate-100">
-                {MobileTabIcon && <MobileTabIcon className="h-4 w-4 text-[#4F46E5]" />}
-                <span>{activeMobileMeta?.label}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMobileSheetTab(null)}
-                aria-label="প্যানেল বন্ধ করুন"
-                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-[#F7F8FA] text-[#64748B] hover:text-[#0F172A] dark:bg-[#0B0F19] dark:text-slate-300"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+          {mobileSheetTab === 'layers' ? (
+            <MobileLayersPanel
+              resolvedLayerOrder={resolvedLayerOrder}
+              selectedLayerId={selectedLayerId}
+              onSelectLayer={(id) => panelProps.onSelectLayer(id)}
+              layerVisibility={layerVisibility}
+              onToggleVisibility={panelProps.onToggleLayerVisibility}
+              layerOpacity={layerOpacity}
+              onChangeLayerOpacity={panelProps.onChangeLayerOpacity}
+              layerLocks={layerLocks}
+              onToggleLock={panelProps.onToggleLayerLock}
+              layerNames={layerNames}
+              onRenameLayer={(id, nextName) => {
+                const trimmed = nextName.trim();
+                setLayerNames((prev) => {
+                  const next = { ...prev };
+                  if (!trimmed) delete next[id];
+                  else next[id] = trimmed;
+                  return next;
+                });
+              }}
+              onReorderVisualLayers={panelProps.onReorderVisualLayers}
+              onResetLayerSystem={panelProps.onResetLayerSystem}
+              effectiveTemplate={effectiveTemplate}
+              selectedTemplate={selectedTemplate}
+              overlayImg={overlayImg}
+              photoImg={photoImg}
+              logoImg={logoImg}
+              officialLogoImg={officialLogoImg}
+              headline={headline}
+              highlights={highlights}
+              lineMode={lineMode}
+              fontSizePercent={fontSizePercent}
+              lineGapPercent={lineGapPercent}
+              activeFont={activeFont}
+              allFonts={allFonts}
+              textOffsetX={textOffsetX}
+              textOffsetY={textOffsetY}
+              textShadow={textShadow}
+              textColor={textColor}
+              highlightColor={highlightColor}
+              headlineAlignOverride={headlineAlignOverride}
+              onChangeHeadlineAlign={setHeadlineAlignOverride}
+              photoZoom={photoZoom}
+              photoPanX={photoPanX}
+              photoPanY={photoPanY}
+              logoSettings={logoSettings}
+              subheading={subheading}
+              customTexts={customTexts}
+              extraImages={extraImages}
+              extraImageEls={extraImageEls}
+              dateText={dateTextOverride}
+              onHeadlineChange={panelProps.onHeadlineChange}
+              parsedWords={parsedWords}
+              isWordHighlighted={isWordHighlighted}
+              onToggleWordHighlight={handleToggleWordHighlight}
+              onClearAllHighlights={panelProps.onClearAllHighlights}
+              hasHighlights={highlights.length > 0}
+              onChangeLineMode={setLineMode}
+              onSelectFont={setSelectedFontId}
+              onChangeFontSizePercent={setFontSizePercent}
+              onChangeLineGapPercent={setLineGapPercent}
+              onChangeTextOffset={panelProps.onChangeTextOffset}
+              onChangeTextShadow={setTextShadow}
+              onChangeTextColor={setTextColor}
+              onChangeHighlightColor={setHighlightColor}
+              onChangeSubheading={setSubheading}
+              onResetSubheading={panelProps.onResetSubheading}
+              onChangeCustomTexts={setCustomTexts}
+              onDeleteCustomText={panelProps.onDeleteCustomText}
+              onAddDirectCustomText={panelProps.onAddDirectCustomText}
+              onStartPencilMode={panelProps.onStartPencilMode}
+              onChangeExtraImages={setExtraImages}
+              onDeleteExtraImage={panelProps.onDeleteExtraImage}
+              onTriggerAddExtraImage={panelProps.onTriggerAddExtraImage}
+              onPasteClipboardImage={handlePasteFromClipboardButton}
+              onPromoteExtraImageToMain={panelProps.onPromoteExtraImageToMain}
+              onChangePhotoZoom={setPhotoZoom}
+              onChangePhotoPanX={setPhotoPanX}
+              onChangePhotoPanY={setPhotoPanY}
+              onTriggerPhotoUpload={panelProps.onTriggerPhotoUpload}
+              onResetPhoto={panelProps.onResetPhoto}
+              onChangeLogoSettings={setLogoSettings}
+              onTriggerLogoUpload={panelProps.onTriggerLogoUpload}
+              onOpenLogoEditor={panelProps.onOpenLogoEditor}
+              onUpdateActiveTemplateOverride={handleUpdateActiveTemplateOverride}
+              onTriggerCustomFrameUpload={panelProps.onTriggerCustomFrameUpload}
+              onSwitchToTemplateTab={panelProps.onSwitchToTemplateTab}
+              onCommitHistory={commitHistoryNow}
+              isKeyboardOpen={isMobileKeyboardOpen}
+              onFeedback={triggerMobileFeedback}
+            />
+          ) : mobileSheetTab ? (
+            <MobilePanels
+              activeTab={mobileSheetTab}
+              isKeyboardOpen={isMobileKeyboardOpen}
+              onFeedback={triggerMobileFeedback}
+              headline={headline}
+              onHeadlineChange={panelProps.onHeadlineChange}
+              textareaRef={mobileTextareaRef}
+              onSyncTextareaSelection={syncTextareaSelection}
+              highlightTab={highlightTab}
+              onChangeHighlightTab={setHighlightTab}
+              parsedWords={parsedWords}
+              isWordHighlighted={isWordHighlighted}
+              onToggleWordHighlight={handleToggleWordHighlight}
+              onHighlightAllWords={handleHighlightAllWords}
+              onClearAllHighlights={panelProps.onClearAllHighlights}
+              onHighlightSelection={handleHighlightSelection}
+              onRemoveSelectionHighlight={handleRemoveHighlight}
+              onResetAllNormal={handleResetAllNormal}
+              selectionHint={selectionHint}
+              hasHighlights={highlights.length > 0}
+              subheading={subheading}
+              onChangeSubheading={setSubheading}
+              onResetSubheading={panelProps.onResetSubheading}
+              customTexts={customTexts}
+              onChangeCustomTexts={setCustomTexts}
+              onStartPencilMode={panelProps.onStartPencilMode}
+              onAddDirectCustomText={panelProps.onAddDirectCustomText}
+              onCommitHistory={commitHistoryNow}
+              effectiveTemplate={effectiveTemplate}
+              selectedTemplate={selectedTemplate}
+              footerVisible={layerVisibility['footer'] !== false}
+              onToggleFooterVisible={() => panelProps.onToggleLayerVisibility('footer')}
+              onUpdateActiveTemplateOverride={handleUpdateActiveTemplateOverride}
+              onResetActiveTemplateOverride={handleResetActiveTemplateOverride}
+              lineMode={lineMode}
+              onChangeLineMode={setLineMode}
+              allFonts={allFonts}
+              activeFont={activeFont}
+              onSelectFont={setSelectedFontId}
+              onTriggerFontUpload={panelProps.onTriggerFontUpload}
+              fontSizePercent={fontSizePercent}
+              onChangeFontSizePercent={setFontSizePercent}
+              lineGapPercent={lineGapPercent}
+              onChangeLineGapPercent={setLineGapPercent}
+              headlineAlign={
+                headlineAlignOverride ?? effectiveTemplate.headlineAlign ?? 'center'
+              }
+              onChangeHeadlineAlign={setHeadlineAlignOverride}
+              textShadow={textShadow}
+              onChangeTextShadow={setTextShadow}
+              textColor={textColor}
+              onChangeTextColor={setTextColor}
+              highlightColor={highlightColor}
+              onChangeHighlightColor={setHighlightColor}
+              onResetStyleAll={panelProps.onResetStyleAll}
+              onTriggerPhotoUpload={panelProps.onTriggerPhotoUpload}
+              onPasteClipboardImage={handlePasteFromClipboardButton}
+              photoZoom={photoZoom}
+              onChangePhotoZoom={setPhotoZoom}
+              photoPanX={photoPanX}
+              onChangePhotoPanX={setPhotoPanX}
+              photoPanY={photoPanY}
+              onChangePhotoPanY={setPhotoPanY}
+              onResetPhoto={panelProps.onResetPhoto}
+              onTriggerCustomFrameUpload={panelProps.onTriggerCustomFrameUpload}
+              logoSettings={logoSettings}
+              onChangeLogoSettings={setLogoSettings}
+              onTriggerLogoUpload={panelProps.onTriggerLogoUpload}
+              onOpenLogoEditor={panelProps.onOpenLogoEditor}
+              onSelectTemplate={handleSelectTemplate}
+              categoryNames={categoryNames}
+              templateOverrides={templateOverrides}
+              exportFormat={exportFormat}
+              onChangeExportFormat={setExportFormat}
+              exportQuality={exportQuality}
+              onChangeExportQuality={setExportQuality}
+              onExportAndSave={() => handleDownloadCard(true)}
+              downloadDone={downloadDone}
+            />
+          ) : null}
+        </MobileBottomSheet>
+      </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
-            <EditorRightPanel activeTab={mobileSheetTab} {...panelProps} />
-          </div>
-        </section>
-      )}
+      {/* Mobile URL Replace Modal (<768px) */}
+      <MobileUrlModal
+        isOpen={mobileUrlModalOpen}
+        onClose={() => setMobileUrlModalOpen(false)}
+        newsUrl={newsUrl}
+        onNewsUrlChange={(val) => {
+          if (val.trim() !== lastFetchedUrlRef.current) {
+            lastFetchedUrlRef.current = '';
+            setExtractError(null);
+          }
+          setNewsUrl(val);
+        }}
+        onNewsUrlPaste={handleUrlPaste}
+        onClearNewsUrl={handleClearNewsUrl}
+        onTriggerFetch={() => extractNewsFromUrl(newsUrl, true)}
+        isExtracting={isExtracting}
+        isLikelyValidUrl={isLikelyUrl(newsUrl)}
+        extractError={extractError}
+      />
+
+      {/* Mobile Fullscreen Pinch-Zoom Preview Modal (<768px) */}
+      <MobileFullscreenPreviewModal
+        isOpen={Boolean(mobileFullscreenUrl)}
+        onClose={() => setMobileFullscreenUrl(null)}
+        previewImageUrl={mobileFullscreenUrl || ''}
+        aspectRatio={aspectRatioStyle}
+      />
 
       {/* Interactive Logo Editor Modal */}
       {logoEditorSource && (

@@ -4,6 +4,21 @@ import type { TemplateConfig } from '../types/card';
 import type { ProjectEditorState, SavedProject } from '../types/project';
 
 export const DEFAULT_PHOTO_SRC = '/assets/aistudio/5329_21a6eb86.png';
+export const QUOTE_CUTOUT_PHOTO_SRC =
+  '/assets/aistudio/64081-Picsart-BackgroundRemover.jpg_da2aac37.png';
+export const QUOTE_BG_PHOTO_SRC =
+  '/assets/aistudio/IMG_20261022_034030_686_edit_1268213002151005_674b520c.jpg';
+
+export const ALL_BUILTIN_DEFAULT_PHOTO_SRCS = new Set<string>([
+  DEFAULT_PHOTO_SRC,
+  QUOTE_CUTOUT_PHOTO_SRC,
+  QUOTE_BG_PHOTO_SRC,
+]);
+
+export function getTemplateDefaultPhotoSrc(template?: TemplateConfig | null): string {
+  return template?.defaultPhotoSrc || DEFAULT_PHOTO_SRC;
+}
+
 export const MAX_SAVED_PROJECTS = 50;
 
 const projectStore =
@@ -33,27 +48,33 @@ export function createInitialEditorState(
   initialNewsUrl = ''
 ): ProjectEditorState {
   const isMaroon = template.id === PSD_MAROON_TEMPLATE.id;
+  const qDef = template.defaultQuote;
   return {
     newsUrl: initialNewsUrl,
     selectedTemplateId: template.id,
     customTemplate: template.id.startsWith('custom-') ? template : null,
-    headline: isMaroon
-      ? 'নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস'
-      : 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ',
-    highlights: isMaroon
-      ? [{ id: 'sample-hl-2', start: 29, end: 40, text: 'একটি ইতিহাস' }]
-      : [{ id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' }],
+    headline: qDef
+      ? qDef.headline
+      : isMaroon
+        ? 'নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস'
+        : 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ',
+    highlights: qDef
+      ? qDef.highlights ?? []
+      : isMaroon
+        ? [{ id: 'sample-hl-2', start: 29, end: 40, text: 'একটি ইতিহাস' }]
+        : [{ id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' }],
     highlightTab: 'words',
     lineMode: 'auto',
     fontSizePercent: 100,
     lineGapPercent: 92,
-    selectedFontId: 'kalpurush',
+    selectedFontId: qDef?.fontId || 'kalpurush',
     textOffsetX: 0,
     textOffsetY: 0,
     textShadow: false,
     textColor: template.defaultTextColor,
     highlightColor: template.defaultHighlightColor,
-    photoSrc: DEFAULT_PHOTO_SRC,
+    photoSrc: getTemplateDefaultPhotoSrc(template),
+    photoDeleted: false,
     photoZoom: 1,
     photoPanX: 0,
     photoPanY: 0,
@@ -82,6 +103,30 @@ export function createInitialEditorState(
     exportFormat: 'png',
     exportQuality: 96,
     templateOverrides: {},
+    quoteSettings: qDef
+      ? {
+          authorName: qDef.settings.authorName ?? '',
+          authorTitle: qDef.settings.authorTitle ?? '',
+          sourceText: qDef.settings.sourceText ?? '',
+          badgeText: qDef.settings.badgeText ?? '',
+          ratingText: qDef.settings.ratingText ?? '',
+          questionText: qDef.settings.questionText ?? '',
+          questionAuthor: qDef.settings.questionAuthor ?? '',
+          questionMeta: qDef.settings.questionMeta ?? '',
+          secondaryPhotoSrc: qDef.settings.secondaryPhotoSrc ?? '',
+          quoteMarkStyle: qDef.settings.quoteMarkStyle ?? 'classic',
+          quoteMarkColor: qDef.settings.quoteMarkColor ?? '#4f46e5',
+          quoteMarkSizePercent: qDef.settings.quoteMarkSizePercent ?? 100,
+          showDecorShapes: qDef.settings.showDecorShapes ?? true,
+          showQuoteMarks: qDef.settings.showQuoteMarks ?? true,
+          showSocialIcons: qDef.settings.showSocialIcons ?? false,
+          photoStyle: qDef.settings.photoStyle ?? 'original',
+          photoRimColor: qDef.settings.photoRimColor ?? '#ffffff',
+          cardSurfaceColor: qDef.settings.cardSurfaceColor ?? '#ffffff',
+          authorNameColor: qDef.settings.authorNameColor ?? template.defaultTextColor,
+          authorTitleColor: qDef.settings.authorTitleColor ?? '#cbd5e1',
+        }
+      : undefined,
   };
 }
 

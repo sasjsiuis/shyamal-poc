@@ -31,15 +31,18 @@ import type {
   LogoBadgeStyle,
   LogoSettings,
   LogoShape,
+  QuoteCardSettings,
   SubheadingSettings,
   TemplateConfig,
   TemplateOverride,
 } from '../../types/card';
 import { getDefaultBengaliDateText, toVisualTopDownOrder } from '../../utils/layerUtils';
 import { toBengaliDigits } from '../../utils/projectStorage';
+import { isQuoteStyleType } from '../../utils/quoteCardRenderer';
 import { EditableNumberBadge } from '../EditableNumberBadge';
 import { RangeSlider } from '../RangeSlider';
 import type { ParsedWord } from './EditorRightPanel';
+import { QuoteCustomizerSection } from './QuoteCustomizerSection';
 
 interface LayersPanelProps {
   resolvedLayerOrder: string[];
@@ -106,7 +109,14 @@ interface LayersPanelProps {
   photoPanY: number;
   onChangePhotoPanY: (v: number) => void;
   onTriggerPhotoUpload: () => void;
+  photoDeleted?: boolean;
+  onDeletePhoto?: () => void;
   onResetPhoto: () => void;
+  quoteSettings: QuoteCardSettings;
+  onChangeQuoteSettings: (updater: (prev: QuoteCardSettings) => QuoteCardSettings) => void;
+  onResetQuoteSettings: () => void;
+  onTriggerSecondaryPhotoUpload: () => void;
+  onDeleteSecondaryPhoto: () => void;
 
   logoSettings: LogoSettings;
   onChangeLogoSettings: (updater: (prev: LogoSettings) => LogoSettings) => void;
@@ -235,14 +245,20 @@ export const LayersPanel: React.FC<LayersPanelProps> = (props) => {
     if (id === 'photo') {
       return {
         title: 'মূল ছবি',
-        subtitle: `জুম ${toBengaliDigits(Math.round(props.photoZoom * 100))}%`,
+        subtitle: props.photoDeleted
+          ? 'মুছে ফেলা হয়েছে'
+          : `জুম ${toBengaliDigits(Math.round(props.photoZoom * 100))}%`,
         icon: ImageIcon,
       };
     }
     if (id === 'frame') {
       return {
-        title: 'কার্ড ফ্রেম ও রং',
-        subtitle: props.effectiveTemplate.name,
+        title: isQuoteStyleType(props.effectiveTemplate.styleType)
+          ? 'উক্তির ডিজাইন, আইকন ও রং'
+          : 'কার্ড ফ্রেম ও রং',
+        subtitle: isQuoteStyleType(props.effectiveTemplate.styleType)
+          ? props.quoteSettings.authorName || props.effectiveTemplate.name
+          : props.effectiveTemplate.name,
         icon: Frame,
       };
     }
@@ -1075,7 +1091,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = (props) => {
         {/* 6. MAIN PHOTO INSPECTOR */}
         {selectedId === 'photo' && (
           <div className="space-y-3 border-t border-[#E5E7EB] pt-2.5 dark:border-[#1F2937]">
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
                 onClick={props.onTriggerPhotoUpload}
@@ -1084,6 +1100,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = (props) => {
                 <ImagePlus className="h-3.5 w-3.5" />
                 <span>নতুন ছবি দিন</span>
               </button>
+              {props.onDeletePhoto && !props.photoDeleted && (
+                <button
+                  type="button"
+                  onClick={props.onDeletePhoto}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-[#EF4444] hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  <span>ছবি মুছুন</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={props.onResetPhoto}
@@ -1093,6 +1119,19 @@ export const LayersPanel: React.FC<LayersPanelProps> = (props) => {
                 <span>রিসেট</span>
               </button>
             </div>
+
+            {props.photoDeleted && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11.5px] font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                <span>মূল ছবি মুছে ফেলা হয়েছে।</span>
+                <button
+                  type="button"
+                  onClick={props.onResetPhoto}
+                  className="cursor-pointer font-bold underline"
+                >
+                  ডিফল্ট ফিরান
+                </button>
+              </div>
+            )}
 
             <div>
               <MiniSliderHeader
@@ -1135,13 +1174,41 @@ export const LayersPanel: React.FC<LayersPanelProps> = (props) => {
                 />
               </div>
             </div>
+
+            {isQuoteStyleType(props.effectiveTemplate.styleType) && (
+              <QuoteCustomizerSection
+                mode="photo"
+                effectiveTemplate={props.effectiveTemplate}
+                selectedTemplate={props.selectedTemplate}
+                quoteSettings={props.quoteSettings}
+                onChangeQuoteSettings={props.onChangeQuoteSettings}
+                onResetQuoteSettings={props.onResetQuoteSettings}
+                onUpdateActiveTemplateOverride={props.onUpdateActiveTemplateOverride}
+                onTriggerSecondaryPhotoUpload={props.onTriggerSecondaryPhotoUpload}
+                onDeleteSecondaryPhoto={props.onDeleteSecondaryPhoto}
+                onCommitHistory={props.onCommitHistory}
+              />
+            )}
           </div>
         )}
 
         {/* 7. FRAME / TEMPLATE INSPECTOR */}
         {selectedId === 'frame' && (
           <div className="space-y-3 border-t border-[#E5E7EB] pt-2.5 dark:border-[#1F2937]">
-            {props.selectedTemplate.styleType !== 'psd-overlay' ? (
+            {isQuoteStyleType(props.effectiveTemplate.styleType) ? (
+              <QuoteCustomizerSection
+                mode="all"
+                effectiveTemplate={props.effectiveTemplate}
+                selectedTemplate={props.selectedTemplate}
+                quoteSettings={props.quoteSettings}
+                onChangeQuoteSettings={props.onChangeQuoteSettings}
+                onResetQuoteSettings={props.onResetQuoteSettings}
+                onUpdateActiveTemplateOverride={props.onUpdateActiveTemplateOverride}
+                onTriggerSecondaryPhotoUpload={props.onTriggerSecondaryPhotoUpload}
+                onDeleteSecondaryPhoto={props.onDeleteSecondaryPhoto}
+                onCommitHistory={props.onCommitHistory}
+              />
+            ) : props.selectedTemplate.styleType !== 'psd-overlay' ? (
               <div className="grid grid-cols-1 gap-2">
                 <ColorField
                   label="মূল পটভূমি (Primary)"
@@ -1190,7 +1257,12 @@ export const LayersPanel: React.FC<LayersPanelProps> = (props) => {
 
             <button
               type="button"
-              onClick={props.onResetActiveTemplateOverride}
+              onClick={() => {
+                props.onResetActiveTemplateOverride();
+                if (isQuoteStyleType(props.effectiveTemplate.styleType)) {
+                  props.onResetQuoteSettings();
+                }
+              }}
               className="flex w-full cursor-pointer items-center justify-center gap-1 text-xs font-semibold text-[#4F46E5] hover:underline"
             >
               <RotateCcw className="h-3 w-3" />

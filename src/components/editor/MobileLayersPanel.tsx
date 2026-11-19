@@ -27,6 +27,7 @@ import type {
   LogoBadgeStyle,
   LogoSettings,
   LogoShape,
+  QuoteCardSettings,
   SubheadingSettings,
   TemplateConfig,
   TemplateOverride,
@@ -34,9 +35,11 @@ import type {
 import { renderLayerThumbnail, type RenderCardOptions } from '../../utils/canvasRenderer';
 import { getDefaultBengaliDateText, toVisualTopDownOrder } from '../../utils/layerUtils';
 import { toBengaliDigits } from '../../utils/projectStorage';
+import { isQuoteStyleType } from '../../utils/quoteCardRenderer';
 import { EditableNumberBadge } from '../EditableNumberBadge';
 import { RangeSlider } from '../RangeSlider';
 import type { ParsedWord } from './EditorRightPanel';
+import { QuoteCustomizerSection } from './QuoteCustomizerSection';
 
 interface MobileLayersPanelProps {
   resolvedLayerOrder: string[];
@@ -119,6 +122,14 @@ interface MobileLayersPanelProps {
   onChangePhotoPanY: (v: number) => void;
   onTriggerPhotoUpload: () => void;
   onResetPhoto: () => void;
+  photoDeleted?: boolean;
+  onDeletePhoto?: () => void;
+  quoteSettings: QuoteCardSettings;
+  onChangeQuoteSettings: (updater: (prev: QuoteCardSettings) => QuoteCardSettings) => void;
+  onResetQuoteSettings: () => void;
+  onTriggerSecondaryPhotoUpload: () => void;
+  onDeleteSecondaryPhoto: () => void;
+  secondaryPhotoImg?: HTMLImageElement | null;
 
   onChangeLogoSettings: (updater: (prev: LogoSettings) => LogoSettings) => void;
   onTriggerLogoUpload: () => void;
@@ -300,6 +311,9 @@ export const MobileLayersPanel: React.FC<MobileLayersPanelProps> = (props) => {
       photoZoom: props.photoZoom,
       photoPanX: props.photoPanX,
       photoPanY: props.photoPanY,
+      photoDeleted: props.photoDeleted,
+      quoteSettings: props.quoteSettings,
+      secondaryPhotoImg: props.secondaryPhotoImg ?? null,
       logoSettings: props.logoSettings,
       subheading: props.subheading,
       customTexts: props.customTexts,
@@ -331,6 +345,9 @@ export const MobileLayersPanel: React.FC<MobileLayersPanelProps> = (props) => {
       props.photoZoom,
       props.photoPanX,
       props.photoPanY,
+      props.photoDeleted,
+      props.quoteSettings,
+      props.secondaryPhotoImg,
       props.logoSettings,
       props.subheading,
       props.customTexts,
@@ -353,6 +370,9 @@ export const MobileLayersPanel: React.FC<MobileLayersPanelProps> = (props) => {
         props.effectiveTemplate.palette,
         Boolean(props.overlayImg),
         props.photoImg?.src,
+        props.photoDeleted,
+        props.quoteSettings,
+        props.secondaryPhotoImg?.src,
         props.logoImg?.src,
         Boolean(props.officialLogoImg),
         props.headline,
@@ -379,6 +399,9 @@ export const MobileLayersPanel: React.FC<MobileLayersPanelProps> = (props) => {
       props.effectiveTemplate,
       props.overlayImg,
       props.photoImg,
+      props.photoDeleted,
+      props.quoteSettings,
+      props.secondaryPhotoImg,
       props.logoImg,
       props.officialLogoImg,
       props.headline,
@@ -1032,6 +1055,34 @@ export const MobileLayersPanel: React.FC<MobileLayersPanelProps> = (props) => {
                 <span>রিসেট</span>
               </button>
             </div>
+
+            {props.onDeletePhoto && !props.photoDeleted && (
+              <button
+                type="button"
+                onClick={() => {
+                  props.onDeletePhoto?.();
+                  props.onFeedback?.('মূল ছবি মুছে ফেলা হয়েছে', 'photo');
+                }}
+                className="inline-flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-semibold text-[#EF4444] dark:border-red-900 dark:bg-red-950/30 dark:text-red-400"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>মূল ছবি মুছুন</span>
+              </button>
+            )}
+
+            {props.photoDeleted && (
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                <span>মূল ছবি মুছে ফেলা হয়েছে।</span>
+                <button
+                  type="button"
+                  onClick={props.onResetPhoto}
+                  className="min-h-[44px] shrink-0 cursor-pointer px-2 font-bold underline"
+                >
+                  ডিফল্ট ফিরান
+                </button>
+              </div>
+            )}
+
             <div>
               <MobileSliderHeader
                 label="ছবির জুম"
@@ -1050,36 +1101,71 @@ export const MobileLayersPanel: React.FC<MobileLayersPanelProps> = (props) => {
                 ariaLabel="ছবির জুম"
               />
             </div>
+
+            {isQuoteStyleType(props.effectiveTemplate.styleType) && (
+              <QuoteCustomizerSection
+                mode="photo"
+                mobile
+                effectiveTemplate={props.effectiveTemplate}
+                selectedTemplate={props.selectedTemplate}
+                quoteSettings={props.quoteSettings}
+                onChangeQuoteSettings={props.onChangeQuoteSettings}
+                onResetQuoteSettings={props.onResetQuoteSettings}
+                onUpdateActiveTemplateOverride={props.onUpdateActiveTemplateOverride}
+                onTriggerSecondaryPhotoUpload={props.onTriggerSecondaryPhotoUpload}
+                onDeleteSecondaryPhoto={props.onDeleteSecondaryPhoto}
+                onCommitHistory={props.onCommitHistory}
+              />
+            )}
           </div>
         )}
 
         {/* Frame Editor */}
         {selectedId === 'frame' && (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={props.onSwitchToTemplateTab}
-                className="inline-flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#4F46E5] px-3 text-sm font-semibold text-white"
-              >
-                <span>টেমপ্লেট বদলান</span>
-              </button>
-              <button
-                type="button"
-                onClick={props.onTriggerCustomFrameUpload}
-                className="inline-flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0F172A] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200"
-              >
-                <Upload className="h-4 w-4 text-[#4F46E5]" />
-                <span>ফ্রেম আপলোড</span>
-              </button>
-            </div>
-            {props.selectedTemplate.styleType !== 'psd-overlay' && (
+            {!props.isKeyboardOpen && (
               <div className="grid grid-cols-2 gap-2">
-                <MobileColorRow label="মূল রং ১" value={activePal.bgPrimary} onChange={(v) => updatePaletteKey('bgPrimary', v)} />
-                <MobileColorRow label="মূল রং ২" value={activePal.bgSecondary} onChange={(v) => updatePaletteKey('bgSecondary', v)} />
-                <MobileColorRow label="অ্যাক্সেন্ট" value={activePal.accent} onChange={(v) => updatePaletteKey('accent', v)} />
-                <MobileColorRow label="বর্ডার" value={activePal.borderColor} onChange={(v) => updatePaletteKey('borderColor', v)} />
+                <button
+                  type="button"
+                  onClick={props.onSwitchToTemplateTab}
+                  className="inline-flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#4F46E5] px-3 text-sm font-semibold text-white"
+                >
+                  <span>টেমপ্লেট বদলান</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={props.onTriggerCustomFrameUpload}
+                  className="inline-flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#0F172A] dark:border-[#1F2937] dark:bg-[#0B0F19] dark:text-slate-200"
+                >
+                  <Upload className="h-4 w-4 text-[#4F46E5]" />
+                  <span>ফ্রেম আপলোড</span>
+                </button>
               </div>
+            )}
+            {isQuoteStyleType(props.effectiveTemplate.styleType) ? (
+              <QuoteCustomizerSection
+                mode="all"
+                mobile
+                isKeyboardOpen={props.isKeyboardOpen}
+                effectiveTemplate={props.effectiveTemplate}
+                selectedTemplate={props.selectedTemplate}
+                quoteSettings={props.quoteSettings}
+                onChangeQuoteSettings={props.onChangeQuoteSettings}
+                onResetQuoteSettings={props.onResetQuoteSettings}
+                onUpdateActiveTemplateOverride={props.onUpdateActiveTemplateOverride}
+                onTriggerSecondaryPhotoUpload={props.onTriggerSecondaryPhotoUpload}
+                onDeleteSecondaryPhoto={props.onDeleteSecondaryPhoto}
+                onCommitHistory={props.onCommitHistory}
+              />
+            ) : (
+              props.selectedTemplate.styleType !== 'psd-overlay' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <MobileColorRow label="মূল রং ১" value={activePal.bgPrimary} onChange={(v) => updatePaletteKey('bgPrimary', v)} />
+                  <MobileColorRow label="মূল রং ২" value={activePal.bgSecondary} onChange={(v) => updatePaletteKey('bgSecondary', v)} />
+                  <MobileColorRow label="অ্যাক্সেন্ট" value={activePal.accent} onChange={(v) => updatePaletteKey('accent', v)} />
+                  <MobileColorRow label="বর্ডার" value={activePal.borderColor} onChange={(v) => updatePaletteKey('borderColor', v)} />
+                </div>
+              )
             )}
           </div>
         )}

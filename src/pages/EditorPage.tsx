@@ -37,6 +37,7 @@ import type {
   HighlightRange,
   LineMode,
   LogoSettings,
+  QuoteCardSettings,
   RenderedLayoutMetrics,
   SubheadingSettings,
   TemplateCategory,
@@ -50,6 +51,7 @@ import {
   normalizeLayerOrder,
   reorderVisualTopDown,
 } from '../utils/layerUtils';
+import { getDefaultQuoteSettings, isQuoteStyleType } from '../utils/quoteCardRenderer';
 import {
   extractTitleFromSlugClient,
   extractYouTubeThumbClient,
@@ -61,6 +63,7 @@ import {
   sanitizeUrlInput,
 } from '../utils/newsExtractor';
 import {
+  ALL_BUILTIN_DEFAULT_PHOTO_SRCS,
   DEFAULT_PHOTO_SRC,
   createInitialEditorState,
   createNewProject,
@@ -68,6 +71,7 @@ import {
   generateCanvasThumbnail,
   generateUuid,
   getProjectById,
+  getTemplateDefaultPhotoSrc,
   saveProject,
   toBengaliDigits,
 } from '../utils/projectStorage';
@@ -258,7 +262,9 @@ export const EditorPage: React.FC = () => {
   const [fontSizePercent, setFontSizePercent] = useState<number>(100);
   const [lineGapPercent, setLineGapPercent] = useState<number>(92);
   const [customFonts, setCustomFonts] = useState<FontOption[]>([]);
-  const [selectedFontId, setSelectedFontId] = useState<string>('kalpurush');
+  const [selectedFontId, setSelectedFontId] = useState<string>(
+    () => initialDefaults.selectedFontId || 'kalpurush'
+  );
   const [fontsLoadedTick, setFontsLoadedTick] = useState(0);
 
   const [textOffsetX, setTextOffsetX] = useState<number>(0);
@@ -269,12 +275,18 @@ export const EditorPage: React.FC = () => {
     initialRouteTemplate.defaultHighlightColor
   );
 
-  const [photoSrc, setPhotoSrc] = useState<string>(DEFAULT_PHOTO_SRC);
+  const [photoSrc, setPhotoSrc] = useState<string>(initialDefaults.photoSrc);
+  const [photoDeleted, setPhotoDeleted] = useState<boolean>(false);
   const [photoImg, setPhotoImg] = useState<HTMLImageElement | null>(null);
   const [defaultPhotoImg, setDefaultPhotoImg] = useState<HTMLImageElement | null>(null);
   const [photoZoom, setPhotoZoom] = useState<number>(1);
   const [photoPanX, setPhotoPanX] = useState<number>(0);
   const [photoPanY, setPhotoPanY] = useState<number>(0);
+
+  const [quoteSettings, setQuoteSettings] = useState<QuoteCardSettings>(() =>
+    getDefaultQuoteSettings(initialRouteTemplate, initialDefaults.quoteSettings)
+  );
+  const [secondaryPhotoImg, setSecondaryPhotoImg] = useState<HTMLImageElement | null>(null);
 
   const [logoSettings, setLogoSettings] = useState<LogoSettings>(initialDefaults.logoSettings);
   const [logoImg, setLogoImg] = useState<HTMLImageElement | null>(null);
@@ -310,6 +322,7 @@ export const EditorPage: React.FC = () => {
 
   // File input refs
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const secondaryPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const extraImageInputRef = useRef<HTMLInputElement | null>(null);
   const fontInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -592,6 +605,22 @@ export const EditorPage: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.fonts?.load) return;
+    let active = true;
+    const stylePrefix = activeFont.italic ? 'italic ' : '';
+    const weight = activeFont.weight ?? 600;
+    document.fonts
+      .load(`${stylePrefix}${weight} 48px ${activeFont.family}`, headline.slice(0, 12) || 'বাংলা')
+      .then(() => {
+        if (active) setFontsLoadedTick((t) => t + 1);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [activeFont, headline]);
+
   // Load overlay, photo, logo, official logo
   useEffect(() => {
     if (!selectedTemplate.overlayUrl) {
@@ -659,6 +688,27 @@ export const EditorPage: React.FC = () => {
   }, [photoSrc]);
 
   useEffect(() => {
+    const secSrc = quoteSettings.secondaryPhotoSrc;
+    if (!secSrc) {
+      setSecondaryPhotoImg(null);
+      return;
+    }
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (!cancelled) setSecondaryPhotoImg(img);
+    };
+    img.onerror = () => {
+      if (!cancelled) setSecondaryPhotoImg(null);
+    };
+    img.src = secSrc;
+    return () => {
+      cancelled = true;
+    };
+  }, [quoteSettings.secondaryPhotoSrc]);
+
+  useEffect(() => {
     if (!logoSettings.dataUrl) {
       setLogoImg(null);
       return;
@@ -686,17 +736,23 @@ export const EditorPage: React.FC = () => {
     };
     img.src = '/assets/shyamal_sylhet_logo.png';
 
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     const defPhoto = new Image();
     defPhoto.crossOrigin = 'anonymous';
     defPhoto.onload = () => {
       if (!cancelled) setDefaultPhotoImg(defPhoto);
     };
-    defPhoto.src = DEFAULT_PHOTO_SRC;
-
+    defPhoto.src = getTemplateDefaultPhotoSrc(selectedTemplate);
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedTemplate]);
 
   // Track mobile viewport dimensions, visualViewport keyboard resize, and stage box via ResizeObserver
   useEffect(() => {
@@ -820,14 +876,51 @@ export const EditorPage: React.FC = () => {
           : prev
       );
 
+      if (isQuoteStyleType(nextTpl.styleType)) {
+        const nextQuoteDefaults = getDefaultQuoteSettings(nextTpl);
+        setQuoteSettings((prev) => ({
+          ...nextQuoteDefaults,
+          secondaryPhotoSrc:
+            prev.secondaryPhotoSrc.startsWith('data:') ||
+            prev.secondaryPhotoSrc.startsWith('blob:')
+              ? prev.secondaryPhotoSrc
+              : nextQuoteDefaults.secondaryPhotoSrc,
+        }));
+        if (nextTpl.defaultQuote?.fontId) {
+          setSelectedFontId(nextTpl.defaultQuote.fontId);
+        }
+      }
+
+      if (!photoDeleted && ALL_BUILTIN_DEFAULT_PHOTO_SRCS.has(photoSrc)) {
+        setPhotoSrc(getTemplateDefaultPhotoSrc(nextTpl));
+        setPhotoZoom(1);
+        setPhotoPanX(0);
+        setPhotoPanY(0);
+      }
+
       if (!newsUrl.trim()) {
-        if (
+        const isCurrentDefaultSample =
+          !headline.trim() ||
+          headline === 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ' ||
+          headline === 'নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস' ||
+          ALL_TEMPLATES.some((t) => t.defaultQuote?.headline === headline);
+
+        if (nextTpl.defaultQuote && isCurrentDefaultSample) {
+          setHeadline(nextTpl.defaultQuote.headline);
+          setRenderHeadline(nextTpl.defaultQuote.headline);
+          setHighlights(nextTpl.defaultQuote.highlights ?? []);
+          setHeadlineAlignOverride(undefined);
+          setTextOffsetX(0);
+          setTextOffsetY(0);
+        } else if (
           nextTpl.id === PSD_MAROON_TEMPLATE.id &&
-          (headline === 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ' || !headline.trim())
+          isCurrentDefaultSample
         ) {
           setHeadline('নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস');
+          setRenderHeadline('নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস');
           setHighlights([{ id: 'sample-hl-2', start: 29, end: 40, text: 'একটি ইতিহাস' }]);
-          setPhotoSrc(DEFAULT_PHOTO_SRC);
+          setPhotoSrc(getTemplateDefaultPhotoSrc(nextTpl));
+          setPhotoDeleted(false);
           setPhotoZoom(1);
           setPhotoPanX(0);
           setPhotoPanY(0);
@@ -835,11 +928,13 @@ export const EditorPage: React.FC = () => {
           setTextOffsetY(0);
         } else if (
           nextTpl.id === PSD_GREEN_TEMPLATE.id &&
-          (headline === 'নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস' || !headline.trim())
+          isCurrentDefaultSample
         ) {
           setHeadline('ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ');
+          setRenderHeadline('ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ');
           setHighlights([{ id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' }]);
-          setPhotoSrc(DEFAULT_PHOTO_SRC);
+          setPhotoSrc(getTemplateDefaultPhotoSrc(nextTpl));
+          setPhotoDeleted(false);
           setPhotoZoom(1);
           setPhotoPanX(0);
           setPhotoPanY(0);
@@ -870,6 +965,7 @@ export const EditorPage: React.FC = () => {
     textColor: string;
     highlightColor: string;
     photoSrc: string;
+    photoDeleted: boolean;
     photoZoom: number;
     photoPanX: number;
     photoPanY: number;
@@ -883,6 +979,7 @@ export const EditorPage: React.FC = () => {
     layerLocks: Record<string, boolean>;
     layerNames: Record<string, string>;
     templateOverrides: Record<string, TemplateOverride>;
+    quoteSettings: QuoteCardSettings;
   };
 
   const currentUndoable = useMemo<UndoableState>(
@@ -902,6 +999,7 @@ export const EditorPage: React.FC = () => {
       textColor,
       highlightColor,
       photoSrc,
+      photoDeleted,
       photoZoom,
       photoPanX,
       photoPanY,
@@ -915,6 +1013,7 @@ export const EditorPage: React.FC = () => {
       layerLocks,
       layerNames,
       templateOverrides,
+      quoteSettings,
     }),
     [
       newsUrl,
@@ -932,6 +1031,7 @@ export const EditorPage: React.FC = () => {
       textColor,
       highlightColor,
       photoSrc,
+      photoDeleted,
       photoZoom,
       photoPanX,
       photoPanY,
@@ -945,6 +1045,7 @@ export const EditorPage: React.FC = () => {
       layerLocks,
       layerNames,
       templateOverrides,
+      quoteSettings,
     ]
   );
 
@@ -975,6 +1076,7 @@ export const EditorPage: React.FC = () => {
     a.textColor === b.textColor &&
     a.highlightColor === b.highlightColor &&
     a.photoSrc === b.photoSrc &&
+    a.photoDeleted === b.photoDeleted &&
     a.photoZoom === b.photoZoom &&
     a.photoPanX === b.photoPanX &&
     a.photoPanY === b.photoPanY &&
@@ -994,7 +1096,8 @@ export const EditorPage: React.FC = () => {
     JSON.stringify(a.layerLocks) === JSON.stringify(b.layerLocks) &&
     JSON.stringify(a.layerNames) === JSON.stringify(b.layerNames) &&
     JSON.stringify(a.highlights) === JSON.stringify(b.highlights) &&
-    JSON.stringify(a.templateOverrides) === JSON.stringify(b.templateOverrides);
+    JSON.stringify(a.templateOverrides) === JSON.stringify(b.templateOverrides) &&
+    JSON.stringify(a.quoteSettings) === JSON.stringify(b.quoteSettings);
 
   const applyUndoableSnapshot = useCallback((snap: UndoableState) => {
     isApplyingHistoryRef.current = true;
@@ -1017,6 +1120,7 @@ export const EditorPage: React.FC = () => {
     setTextColor(snap.textColor);
     setHighlightColor(snap.highlightColor);
     setPhotoSrc(snap.photoSrc);
+    setPhotoDeleted(snap.photoDeleted);
     setPhotoZoom(snap.photoZoom);
     setPhotoPanX(snap.photoPanX);
     setPhotoPanY(snap.photoPanY);
@@ -1030,6 +1134,7 @@ export const EditorPage: React.FC = () => {
     setLayerLocks(snap.layerLocks);
     setLayerNames(snap.layerNames || {});
     setTemplateOverrides(snap.templateOverrides);
+    setQuoteSettings(snap.quoteSettings);
     window.setTimeout(() => {
       isApplyingHistoryRef.current = false;
     }, 0);
@@ -1199,6 +1304,7 @@ export const EditorPage: React.FC = () => {
           setPhotoZoom(1);
           setPhotoPanX(0);
           setPhotoPanY(0);
+          setPhotoDeleted(false);
           setPhotoSrc(nextImg);
         }
 
@@ -1262,7 +1368,9 @@ export const EditorPage: React.FC = () => {
       setTextShadow(Boolean(st.textShadow));
       setTextColor(st.textColor || resolvedTpl.defaultTextColor);
       setHighlightColor(st.highlightColor || resolvedTpl.defaultHighlightColor);
-      setPhotoSrc(st.photoSrc || DEFAULT_PHOTO_SRC);
+      const deletedFlag = Boolean(st.photoDeleted);
+      setPhotoDeleted(deletedFlag);
+      setPhotoSrc(deletedFlag ? '' : st.photoSrc || getTemplateDefaultPhotoSrc(resolvedTpl));
       setPhotoZoom(st.photoZoom ?? 1);
       setPhotoPanX(st.photoPanX ?? 0);
       setPhotoPanY(st.photoPanY ?? 0);
@@ -1277,6 +1385,7 @@ export const EditorPage: React.FC = () => {
       setLayerNames(st.layerNames || {});
       setExportFormat(st.exportFormat || 'png');
       setExportQuality(st.exportQuality ?? 96);
+      setQuoteSettings(getDefaultQuoteSettings(resolvedTpl, st.quoteSettings));
       if (st.templateOverrides && Object.keys(st.templateOverrides).length > 0) {
         setTemplateOverrides((prev) => ({ ...prev, ...st.templateOverrides }));
       }
@@ -1397,9 +1506,12 @@ export const EditorPage: React.FC = () => {
     setNewsUrl('');
 
     const isMaroon = selectedTemplate.id === PSD_MAROON_TEMPLATE.id;
-    const nextHeadline = isMaroon
-      ? 'নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস'
-      : 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ';
+    const nextQuoteDef = selectedTemplate.defaultQuote;
+    const nextHeadline = nextQuoteDef
+      ? nextQuoteDef.headline
+      : isMaroon
+        ? 'নাহিদ ইসলাম কোনো ব্যক্তি নন, একটি ইতিহাস : ড. ইউনূস'
+        : 'ডেঙ্গু কেড়ে নিলো আরও ৬ জনের প্রাণ';
     setHeadline(nextHeadline);
     setRenderHeadline(nextHeadline);
     setHeadlineAlignOverride(undefined);
@@ -1407,11 +1519,20 @@ export const EditorPage: React.FC = () => {
       setProjectName(defaultProjectName(nextHeadline));
     }
     setHighlights(
-      isMaroon
-        ? [{ id: 'sample-hl-2', start: 29, end: 40, text: 'একটি ইতিহাস' }]
-        : [{ id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' }]
+      nextQuoteDef
+        ? nextQuoteDef.highlights ?? []
+        : isMaroon
+          ? [{ id: 'sample-hl-2', start: 29, end: 40, text: 'একটি ইতিহাস' }]
+          : [{ id: 'sample-hl-1', start: 16, end: 27, text: 'আরও ৬ জনের' }]
     );
-    setPhotoSrc(DEFAULT_PHOTO_SRC);
+    if (isQuoteStyleType(selectedTemplate.styleType)) {
+      setQuoteSettings(getDefaultQuoteSettings(selectedTemplate));
+      if (nextQuoteDef?.fontId) {
+        setSelectedFontId(nextQuoteDef.fontId);
+      }
+    }
+    setPhotoSrc(getTemplateDefaultPhotoSrc(selectedTemplate));
+    setPhotoDeleted(false);
     setPhotoZoom(1);
     setPhotoPanX(0);
     setPhotoPanY(0);
@@ -1457,6 +1578,7 @@ export const EditorPage: React.FC = () => {
       textColor,
       highlightColor,
       photoSrc,
+      photoDeleted,
       photoZoom,
       photoPanX,
       photoPanY,
@@ -1474,6 +1596,7 @@ export const EditorPage: React.FC = () => {
       templateOverrides: templateOverrides[selectedTemplate.id]
         ? { [selectedTemplate.id]: templateOverrides[selectedTemplate.id] }
         : {},
+      quoteSettings,
     }),
     [
       newsUrl,
@@ -1492,6 +1615,7 @@ export const EditorPage: React.FC = () => {
       textColor,
       highlightColor,
       photoSrc,
+      photoDeleted,
       photoZoom,
       photoPanX,
       photoPanY,
@@ -1507,6 +1631,7 @@ export const EditorPage: React.FC = () => {
       exportFormat,
       exportQuality,
       templateOverrides,
+      quoteSettings,
     ]
   );
 
@@ -1774,6 +1899,9 @@ export const EditorPage: React.FC = () => {
         isExport: false,
         snapState,
         outlineLayerId,
+        photoDeleted,
+        quoteSettings,
+        secondaryPhotoImg,
       });
 
       layoutMetricsRef.current = metrics;
@@ -1788,6 +1916,9 @@ export const EditorPage: React.FC = () => {
     isBeforeAfterPressed,
     overlayImg,
     photoImg,
+    photoDeleted,
+    quoteSettings,
+    secondaryPhotoImg,
     logoImg,
     officialLogoImg,
     renderHeadline,
@@ -1897,10 +2028,39 @@ export const EditorPage: React.FC = () => {
         setPhotoZoom(1);
         setPhotoPanX(0);
         setPhotoPanY(0);
+        setPhotoDeleted(false);
         setPhotoSrc(reader.result);
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleSecondaryPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !file.type.startsWith('image/') || file.size > 20 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        commitHistoryNow();
+        setQuoteSettings((prev) => ({
+          ...prev,
+          secondaryPhotoSrc: reader.result as string,
+        }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDeletePhoto = () => {
+    commitHistoryNow();
+    setPhotoSrc('');
+    setPhotoImg(null);
+    setPhotoDeleted(true);
+    setPhotoZoom(1);
+    setPhotoPanX(0);
+    setPhotoPanY(0);
+    showToast('মূল ছবি মুছে ফেলা হয়েছে ✓', 'success');
   };
 
   // Add Extra Image Layer (used by Drag & Drop, Paste Ctrl+V, and Layers Tab "+ ছবি লেয়ার")
@@ -2493,6 +2653,9 @@ export const EditorPage: React.FC = () => {
       layerOpacity,
       dateTextOverride,
       isExport: true,
+      photoDeleted,
+      quoteSettings,
+      secondaryPhotoImg,
     });
 
     const mime = exportFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
@@ -2649,6 +2812,8 @@ export const EditorPage: React.FC = () => {
       setHighlightColor(selectedTemplate.defaultHighlightColor);
     },
     onTriggerPhotoUpload: () => photoInputRef.current?.click(),
+    photoDeleted,
+    onDeletePhoto: handleDeletePhoto,
     photoZoom,
     onChangePhotoZoom: setPhotoZoom,
     photoPanX,
@@ -2659,7 +2824,18 @@ export const EditorPage: React.FC = () => {
       setPhotoZoom(1);
       setPhotoPanX(0);
       setPhotoPanY(0);
-      setPhotoSrc(DEFAULT_PHOTO_SRC);
+      setPhotoDeleted(false);
+      setPhotoSrc(getTemplateDefaultPhotoSrc(selectedTemplate));
+    },
+    quoteSettings,
+    onChangeQuoteSettings: setQuoteSettings,
+    onResetQuoteSettings: () => {
+      setQuoteSettings(getDefaultQuoteSettings(selectedTemplate));
+    },
+    onTriggerSecondaryPhotoUpload: () => secondaryPhotoInputRef.current?.click(),
+    onDeleteSecondaryPhoto: () => {
+      commitHistoryNow();
+      setQuoteSettings((prev) => ({ ...prev, secondaryPhotoSrc: '' }));
     },
     onTriggerCustomFrameUpload: () => customFrameInputRef.current?.click(),
     onResetToDefaultGreenTemplate: () => {
@@ -2772,6 +2948,7 @@ export const EditorPage: React.FC = () => {
       setPhotoPanX(0);
       setPhotoPanY(0);
       setPhotoSrc(target.dataUrl);
+      setPhotoDeleted(false);
       setExtraImages((prev) => prev.filter((img) => img.id !== id));
       setSelectedLayerId('photo');
       showToast('ছবিটি মূল ছবি হিসেবে সেট করা হয়েছে ✓', 'success');
@@ -2797,6 +2974,13 @@ export const EditorPage: React.FC = () => {
         type="file"
         accept="image/*"
         onChange={handlePhotoUpload}
+        className="hidden"
+      />
+      <input
+        ref={secondaryPhotoInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleSecondaryPhotoUpload}
         className="hidden"
       />
       <input
@@ -3787,6 +3971,14 @@ export const EditorPage: React.FC = () => {
               onChangePhotoPanY={setPhotoPanY}
               onTriggerPhotoUpload={panelProps.onTriggerPhotoUpload}
               onResetPhoto={panelProps.onResetPhoto}
+              photoDeleted={photoDeleted}
+              onDeletePhoto={handleDeletePhoto}
+              quoteSettings={quoteSettings}
+              onChangeQuoteSettings={setQuoteSettings}
+              onResetQuoteSettings={panelProps.onResetQuoteSettings}
+              onTriggerSecondaryPhotoUpload={panelProps.onTriggerSecondaryPhotoUpload}
+              onDeleteSecondaryPhoto={panelProps.onDeleteSecondaryPhoto}
+              secondaryPhotoImg={secondaryPhotoImg}
               onChangeLogoSettings={setLogoSettings}
               onTriggerLogoUpload={panelProps.onTriggerLogoUpload}
               onOpenLogoEditor={panelProps.onOpenLogoEditor}
@@ -3862,6 +4054,13 @@ export const EditorPage: React.FC = () => {
               photoPanY={photoPanY}
               onChangePhotoPanY={setPhotoPanY}
               onResetPhoto={panelProps.onResetPhoto}
+              photoDeleted={photoDeleted}
+              onDeletePhoto={handleDeletePhoto}
+              quoteSettings={quoteSettings}
+              onChangeQuoteSettings={setQuoteSettings}
+              onResetQuoteSettings={panelProps.onResetQuoteSettings}
+              onTriggerSecondaryPhotoUpload={panelProps.onTriggerSecondaryPhotoUpload}
+              onDeleteSecondaryPhoto={panelProps.onDeleteSecondaryPhoto}
               onTriggerCustomFrameUpload={panelProps.onTriggerCustomFrameUpload}
               logoSettings={logoSettings}
               onChangeLogoSettings={setLogoSettings}

@@ -14,8 +14,35 @@ export interface FontOption {
   label: string;
   family: string;
   weight?: number | string;
+  italic?: boolean;
   isCustom?: boolean;
   dataUrl?: string;
+}
+
+export type QuoteMarkStyle = 'classic' | 'bold-block' | 'slash' | 'circle-badge' | 'none';
+export type QuotePhotoStyle = 'original' | 'grayscale' | 'rim-glow' | 'duotone';
+
+export interface QuoteCardSettings {
+  authorName: string;
+  authorTitle: string;
+  sourceText: string;
+  badgeText: string;
+  ratingText: string;
+  questionText: string;
+  questionAuthor: string;
+  questionMeta: string;
+  secondaryPhotoSrc: string;
+  quoteMarkStyle: QuoteMarkStyle;
+  quoteMarkColor: string;
+  quoteMarkSizePercent: number;
+  showDecorShapes: boolean;
+  showQuoteMarks: boolean;
+  showSocialIcons: boolean;
+  photoStyle: QuotePhotoStyle;
+  photoRimColor: string;
+  cardSurfaceColor: string;
+  authorNameColor: string;
+  authorTitleColor: string;
 }
 
 export type LogoBadgeStyle = 'auto' | 'white' | 'frosted' | 'none';
@@ -103,7 +130,20 @@ export type ProceduralStyleType =
   | 'portal-protidiner-split'
   | 'portal-emjanews'
   | 'portal-sylhetview'
-  | 'portal-sylhettoday';
+  | 'portal-sylhettoday'
+  | 'quote-dramatic-gradient'
+  | 'quote-arc-halftone'
+  | 'quote-dark-glass-rating'
+  | 'quote-violet-lime-card'
+  | 'quote-wave-testimonial'
+  | 'quote-neon-duotone'
+  | 'quote-book-crimson-mark'
+  | 'quote-press-halftone'
+  | 'quote-qa-split'
+  | 'quote-executive-box'
+  | 'quote-chamfer-political'
+  | 'quote-corporate-overlap'
+  | 'quote-warm-bubble';
 
 export type TemplateCategory =
   | 'সব'
@@ -146,6 +186,7 @@ export interface TemplateConfig {
   canvasHeight: number;
   overlayUrl?: string;
   overlaySourceCrop?: RectBox;
+  defaultPhotoSrc?: string;
   photoBox: RectBox;
   photoClipPadding?: number;
   headlineBox: {
@@ -176,6 +217,12 @@ export interface TemplateConfig {
   footerCtaText?: string;
   hasWebsiteUrl?: boolean;
   websiteUrl?: string;
+  defaultQuote?: {
+    headline: string;
+    highlights?: HighlightRange[];
+    fontId?: string;
+    settings: Partial<QuoteCardSettings>;
+  };
 }
 
 export interface ExtraImageLayer {
@@ -202,6 +249,7 @@ export interface TemplateOverride {
   websiteUrl?: string;
   dateText?: string;
   palette?: Partial<NonNullable<TemplateConfig['palette']>>;
+  quoteSettings?: Partial<QuoteCardSettings>;
 }
 
 export interface RenderedLayoutMetrics {

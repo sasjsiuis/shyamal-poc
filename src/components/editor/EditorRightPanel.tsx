@@ -24,17 +24,20 @@ import type {
   LogoBadgeStyle,
   LogoSettings,
   LogoShape,
+  QuoteCardSettings,
   SubheadingSettings,
   TemplateCategory,
   TemplateConfig,
   TemplateOverride,
 } from '../../types/card';
 import { toBengaliDigits } from '../../utils/projectStorage';
+import { isQuoteStyleType } from '../../utils/quoteCardRenderer';
 import { EditableNumberBadge } from '../EditableNumberBadge';
 import { RangeSlider } from '../RangeSlider';
 import { TemplateGallery } from '../TemplateGallery';
 import type { EditorTabId } from './EditorSidebar';
 import { LayersPanel } from './LayersPanel';
+import { QuoteCustomizerSection } from './QuoteCustomizerSection';
 
 export interface ParsedWord {
   index: number;
@@ -124,6 +127,8 @@ interface EditorRightPanelProps {
   onResetStyleAll: () => void;
   // Photo Controls
   onTriggerPhotoUpload: () => void;
+  photoDeleted?: boolean;
+  onDeletePhoto?: () => void;
   photoZoom: number;
   onChangePhotoZoom: (v: number) => void;
   photoPanX: number;
@@ -131,6 +136,11 @@ interface EditorRightPanelProps {
   photoPanY: number;
   onChangePhotoPanY: (v: number) => void;
   onResetPhoto: () => void;
+  quoteSettings: QuoteCardSettings;
+  onChangeQuoteSettings: (updater: (prev: QuoteCardSettings) => QuoteCardSettings) => void;
+  onResetQuoteSettings: () => void;
+  onTriggerSecondaryPhotoUpload: () => void;
+  onDeleteSecondaryPhoto: () => void;
   onTriggerCustomFrameUpload: () => void;
   onResetToDefaultGreenTemplate: () => void;
   extractError: string | null;
@@ -432,6 +442,21 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
 
           {props.selectionHint && (
             <p className="text-xs font-medium text-[#F59E0B]">{props.selectionHint}</p>
+          )}
+
+          {isQuoteStyleType(props.effectiveTemplate.styleType) && (
+            <QuoteCustomizerSection
+              mode="text"
+              effectiveTemplate={props.effectiveTemplate}
+              selectedTemplate={props.selectedTemplate}
+              quoteSettings={props.quoteSettings}
+              onChangeQuoteSettings={props.onChangeQuoteSettings}
+              onResetQuoteSettings={props.onResetQuoteSettings}
+              onUpdateActiveTemplateOverride={props.onUpdateActiveTemplateOverride}
+              onTriggerSecondaryPhotoUpload={props.onTriggerSecondaryPhotoUpload}
+              onDeleteSecondaryPhoto={props.onDeleteSecondaryPhoto}
+              onCommitHistory={props.onCommitHistory}
+            />
           )}
 
           {/* Accordion: Sub-heading & Pencil Custom Text */}
@@ -847,7 +872,14 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
           photoPanY={props.photoPanY}
           onChangePhotoPanY={props.onChangePhotoPanY}
           onTriggerPhotoUpload={props.onTriggerPhotoUpload}
+          photoDeleted={props.photoDeleted}
+          onDeletePhoto={props.onDeletePhoto}
           onResetPhoto={props.onResetPhoto}
+          quoteSettings={props.quoteSettings}
+          onChangeQuoteSettings={props.onChangeQuoteSettings}
+          onResetQuoteSettings={props.onResetQuoteSettings}
+          onTriggerSecondaryPhotoUpload={props.onTriggerSecondaryPhotoUpload}
+          onDeleteSecondaryPhoto={props.onDeleteSecondaryPhoto}
           logoSettings={props.logoSettings}
           onChangeLogoSettings={props.onChangeLogoSettings}
           onTriggerLogoUpload={props.onTriggerLogoUpload}
@@ -1203,6 +1235,21 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
               />
             </div>
           </div>
+
+          {isQuoteStyleType(props.effectiveTemplate.styleType) && (
+            <QuoteCustomizerSection
+              mode="style"
+              effectiveTemplate={props.effectiveTemplate}
+              selectedTemplate={props.selectedTemplate}
+              quoteSettings={props.quoteSettings}
+              onChangeQuoteSettings={props.onChangeQuoteSettings}
+              onResetQuoteSettings={props.onResetQuoteSettings}
+              onUpdateActiveTemplateOverride={props.onUpdateActiveTemplateOverride}
+              onTriggerSecondaryPhotoUpload={props.onTriggerSecondaryPhotoUpload}
+              onDeleteSecondaryPhoto={props.onDeleteSecondaryPhoto}
+              onCommitHistory={props.onCommitHistory}
+            />
+          )}
         </>
       )}
 
@@ -1211,15 +1258,41 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
         <>
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-[14px] font-bold text-[#0F172A] dark:text-slate-100">ছবি</h3>
-            <button
-              type="button"
-              onClick={props.onTriggerPhotoUpload}
-              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-[#4F46E5] px-3.5 text-[13px] font-semibold text-white hover:bg-[#4338CA]"
-            >
-              <ImagePlus className="h-4 w-4" />
-              <span>নিজের ছবি দিন</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={props.onTriggerPhotoUpload}
+                className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-[#4F46E5] px-3 text-[12.5px] font-semibold text-white hover:bg-[#4338CA]"
+              >
+                <ImagePlus className="h-4 w-4" />
+                <span>নিজের ছবি দিন</span>
+              </button>
+              {props.onDeletePhoto && !props.photoDeleted && (
+                <button
+                  type="button"
+                  onClick={props.onDeletePhoto}
+                  title="ডিফল্ট বা বর্তমান ছবি মুছুন"
+                  className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 text-[12px] font-semibold text-[#EF4444] hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>ছবি মুছুন</span>
+                </button>
+              )}
+            </div>
           </div>
+
+          {props.photoDeleted && (
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              <span>মূল ছবি মুছে ফেলা হয়েছে।</span>
+              <button
+                type="button"
+                onClick={props.onResetPhoto}
+                className="shrink-0 cursor-pointer font-bold underline"
+              >
+                ডিফল্ট ফিরান
+              </button>
+            </div>
+          )}
 
           {props.extractError && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
@@ -1293,6 +1366,21 @@ export const EditorRightPanel: React.FC<EditorRightPanelProps> = (props) => {
             <RotateCcw className="h-3.5 w-3.5" />
             <span>ছবি আগের মতো করুন</span>
           </button>
+
+          {isQuoteStyleType(props.effectiveTemplate.styleType) && (
+            <QuoteCustomizerSection
+              mode="photo"
+              effectiveTemplate={props.effectiveTemplate}
+              selectedTemplate={props.selectedTemplate}
+              quoteSettings={props.quoteSettings}
+              onChangeQuoteSettings={props.onChangeQuoteSettings}
+              onResetQuoteSettings={props.onResetQuoteSettings}
+              onUpdateActiveTemplateOverride={props.onUpdateActiveTemplateOverride}
+              onTriggerSecondaryPhotoUpload={props.onTriggerSecondaryPhotoUpload}
+              onDeleteSecondaryPhoto={props.onDeleteSecondaryPhoto}
+              onCommitHistory={props.onCommitHistory}
+            />
+          )}
 
           <AccordionSection title="আসল ফ্রেম PNG (কাস্টম টেমপ্লেট)">
             <button

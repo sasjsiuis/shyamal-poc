@@ -9,12 +9,18 @@ import type {
   LogoSettings,
   LogoShape,
   ProceduralStyleType,
+  QuoteCardSettings,
   RectBox,
   RenderedLayoutMetrics,
   SubheadingSettings,
   TemplateConfig,
 } from '../types/card';
 import { normalizeLayerOrder } from './layerUtils';
+import {
+  getDefaultQuoteSettings,
+  isQuoteStyleType,
+  renderQuoteCardChrome,
+} from './quoteCardRenderer';
 
 export interface RenderCardOptions {
   ctx: CanvasRenderingContext2D;
@@ -52,6 +58,9 @@ export interface RenderCardOptions {
   isExport?: boolean;
   snapState?: { snappedX: boolean; snappedY: boolean; isDragging: boolean };
   outlineLayerId?: string | null;
+  photoDeleted?: boolean;
+  quoteSettings?: QuoteCardSettings;
+  secondaryPhotoImg?: HTMLImageElement | null;
 }
 
 interface TextSegment {
@@ -259,7 +268,8 @@ function drawPhotoIntoBox(
   zoom: number,
   panX: number,
   panY: number,
-  isExport: boolean
+  isExport: boolean,
+  photoDeleted?: boolean
 ): void {
   const clipX = box.x - clipPad;
   const clipY = box.y - clipPad;
@@ -270,6 +280,11 @@ function drawPhotoIntoBox(
   ctx.beginPath();
   ctx.rect(clipX, clipY, clipW, clipH);
   ctx.clip();
+
+  if (photoDeleted) {
+    ctx.restore();
+    return;
+  }
 
   if (!photoImg || !photoImg.naturalWidth || !photoImg.naturalHeight) {
     ctx.fillStyle = isExport ? '#e5e7eb' : '#d9d9d9';
@@ -664,6 +679,10 @@ interface ChromeLayerOpts {
   hideDate?: boolean;
   hideFooter?: boolean;
   skipPhotoDraw?: boolean;
+  photoDeleted?: boolean;
+  quoteSettings?: QuoteCardSettings;
+  secondaryPhotoImg?: HTMLImageElement | null;
+  font?: FontOption;
 }
 
 function renderProceduralTemplateChrome(
@@ -677,6 +696,33 @@ function renderProceduralTemplateChrome(
   isExport: boolean,
   chromeOpts?: ChromeLayerOpts
 ): BrandLogoSlot {
+  if (isQuoteStyleType(template.styleType)) {
+    const resolvedQuoteSettings = getDefaultQuoteSettings(template, chromeOpts?.quoteSettings);
+    const resolvedFont: FontOption = chromeOpts?.font || {
+      id: 'kalpurush',
+      label: 'কালপুরুষ',
+      family: "'Kalpurush', 'Hind Siliguri', sans-serif",
+      weight: 600,
+    };
+    return renderQuoteCardChrome({
+      ctx,
+      template,
+      photoImg,
+      secondaryPhotoImg: chromeOpts?.secondaryPhotoImg,
+      photoZoom: zoom,
+      photoPanX: panX,
+      photoPanY: panY,
+      photoDeleted: chromeOpts?.photoDeleted,
+      quoteSettings: resolvedQuoteSettings,
+      font: resolvedFont,
+      dateText: chromeOpts?.dateTextOverride,
+      hideDate: chromeOpts?.hideDate,
+      hideFooter: chromeOpts?.hideFooter,
+      skipPhotoDraw: chromeOpts?.skipPhotoDraw,
+      hasLogoIntent: hasActiveLogo,
+    });
+  }
+
   const W = template.canvasWidth;
   const H = template.canvasHeight;
   const pal = template.palette!;
@@ -684,7 +730,7 @@ function renderProceduralTemplateChrome(
 
   const renderChromePhoto = () => {
     if (chromeOpts?.skipPhotoDraw) return;
-    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport);
+    drawPhotoIntoBox(ctx, photoImg, pBox, 0, zoom, panX, panY, isExport, chromeOpts?.photoDeleted);
   };
 
   const bgGrad = ctx.createLinearGradient(0, 0, W, H);
@@ -3957,6 +4003,9 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
     isExport = false,
     snapState,
     outlineLayerId,
+    photoDeleted = false,
+    quoteSettings,
+    secondaryPhotoImg = null,
   } = opts;
 
   const W = template.canvasWidth;
@@ -4031,8 +4080,9 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
   let computedLineHeight = hb.baseFontSize * 1.3;
   let computedSpaceWidth = 8;
   const headlineFontWeight = font.weight ?? 600;
+  const headlineFontStyle = font.italic ? 'italic ' : '';
   const setHeadlineFont = (sizePx: number) => {
-    ctx.font = `${headlineFontWeight} ${sizePx.toFixed(1)}px ${font.family}`;
+    ctx.font = `${headlineFontStyle}${headlineFontWeight} ${sizePx.toFixed(1)}px ${font.family}`;
   };
 
   if (trimmedHeadline.length > 0 && isLayerVisible('headline')) {
@@ -4075,10 +4125,12 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
         if (fittedSize <= 16) break;
       }
     } else {
+      const isQuoteTpl = isQuoteStyleType(template.styleType);
       const paragraphs = headline.split(/\r?\n/);
-      const minAutoFontSize = Math.max(18, hb.baseFontSize * 0.44);
+      const minAutoFontSize = isQuoteTpl ? 14 : Math.max(18, hb.baseFontSize * 0.44);
+      const stepSize = isQuoteTpl ? Math.max(1.5, hb.baseFontSize * 0.03) : hb.baseFontSize * 0.035;
 
-      for (let size = hb.baseFontSize; size >= minAutoFontSize; size -= hb.baseFontSize * 0.035) {
+      for (let size = hb.baseFontSize; size >= minAutoFontSize; size -= stepSize) {
         fittedSize = size;
         setHeadlineFont(fittedSize);
         const spaceW = ctx.measureText(' ').width;
@@ -4099,7 +4151,11 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
         }
 
         const totalH = candidateLines.length * fittedSize * baseLineRatio * lineGapScale;
-        const maxAllowedLines = paragraphs.length > 1 ? Math.max(4, paragraphs.length + 1) : 3;
+        const maxAllowedLines = isQuoteTpl
+          ? 12
+          : paragraphs.length > 1
+            ? Math.max(4, paragraphs.length + 1)
+            : 3;
 
         finalLines = candidateLines;
         if (
@@ -4112,22 +4168,42 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
       }
     }
 
+    const isQuoteTpl = isQuoteStyleType(template.styleType);
     computedRenderFontSize = Math.max(12, fittedSize * (fontSizePercent / 100));
     setHeadlineFont(computedRenderFontSize);
     computedSpaceWidth = ctx.measureText(' ').width;
     computedLineHeight = computedRenderFontSize * baseLineRatio * lineGapScale;
 
-    if (lineMode === 'auto' && Math.abs(fontSizePercent - 100) >= 6) {
-      const paragraphs = headline.split(/\r?\n/);
-      const rewrapped: WordToken[][] = [];
-      let charCursor = 0;
-      for (const pText of paragraphs) {
-        const pWords = tokenizeLineIntoWords(pText, charCursor, mask);
-        rewrapped.push(...wrapWordsSmart(ctx, pWords, hb.maxWidth, computedSpaceWidth));
-        charCursor += pText.length + 1;
+    if (lineMode === 'auto' && (isQuoteTpl || Math.abs(fontSizePercent - 100) >= 6)) {
+      const rewrapAtSize = (targetSize: number) => {
+        setHeadlineFont(targetSize);
+        const spW = ctx.measureText(' ').width;
+        const paragraphs = headline.split(/\r?\n/);
+        const rewrapped: WordToken[][] = [];
+        let charCursor = 0;
+        for (const pText of paragraphs) {
+          const pWords = tokenizeLineIntoWords(pText, charCursor, mask);
+          rewrapped.push(...wrapWordsSmart(ctx, pWords, hb.maxWidth, spW));
+          charCursor += pText.length + 1;
+        }
+        return { rewrapped, spW };
+      };
+
+      let { rewrapped, spW } = rewrapAtSize(computedRenderFontSize);
+      if (isQuoteTpl) {
+        while (
+          computedRenderFontSize > 14 &&
+          rewrapped.length * (computedRenderFontSize * baseLineRatio * lineGapScale) > hb.maxHeight
+        ) {
+          computedRenderFontSize = Math.max(14, computedRenderFontSize - 1.5);
+          ({ rewrapped, spW } = rewrapAtSize(computedRenderFontSize));
+          if (computedRenderFontSize <= 14) break;
+        }
       }
       if (rewrapped.length > 0) {
         finalLines = rewrapped;
+        computedSpaceWidth = spW;
+        computedLineHeight = computedRenderFontSize * baseLineRatio * lineGapScale;
       }
     }
 
@@ -4262,12 +4338,16 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
             hideDate: !isLayerVisible('date-badge'),
             hideFooter: !isLayerVisible('footer'),
             skipPhotoDraw: !canProceduralChromeDrawPhotoInline,
+            photoDeleted,
+            quoteSettings,
+            secondaryPhotoImg,
+            font,
           }
         );
       }
       ctx.restore();
     } else if (layerId === 'photo') {
-      if (!chromeDrewPhoto) {
+      if (!chromeDrewPhoto && !photoDeleted) {
         ctx.save();
         ctx.globalAlpha = alpha;
         drawPhotoIntoBox(
@@ -4278,7 +4358,8 @@ export function renderNewsCard(opts: RenderCardOptions): RenderedLayoutMetrics {
           photoZoom,
           photoPanX,
           photoPanY,
-          isExport
+          isExport,
+          photoDeleted
         );
         ctx.restore();
       }
@@ -4721,7 +4802,8 @@ export function renderLayerThumbnail(
       opts.photoZoom,
       opts.photoPanX,
       opts.photoPanY,
-      true
+      true,
+      opts.photoDeleted
     );
     cropBox = template.photoBox;
   } else if (layerId === 'logo') {
@@ -4739,7 +4821,13 @@ export function renderLayerThumbnail(
             0,
             true,
             true,
-            { skipPhotoDraw: true }
+            {
+              skipPhotoDraw: true,
+              photoDeleted: opts.photoDeleted,
+              quoteSettings: opts.quoteSettings,
+              secondaryPhotoImg: opts.secondaryPhotoImg,
+              font: opts.font,
+            }
           );
     sctx.clearRect(0, 0, W, H);
     if (hasCustom && opts.logoImg) {

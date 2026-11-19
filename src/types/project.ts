@@ -5,6 +5,7 @@ import type {
   HighlightRange,
   LineMode,
   LogoSettings,
+  QuoteCardSettings,
   SubheadingSettings,
   TemplateConfig,
   TemplateOverride,
@@ -28,6 +29,7 @@ export interface ProjectEditorState {
   highlightColor: string;
   headlineAlignOverride?: 'left' | 'center' | 'right';
   photoSrc: string;
+  photoDeleted?: boolean;
   photoZoom: number;
   photoPanX: number;
   photoPanY: number;
@@ -43,6 +45,7 @@ export interface ProjectEditorState {
   exportFormat: ExportFormat;
   exportQuality: number;
   templateOverrides: Record<string, TemplateOverride>;
+  quoteSettings?: QuoteCardSettings;
 }
 
 export interface SavedProject {

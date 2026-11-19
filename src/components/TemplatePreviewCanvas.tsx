@@ -34,28 +34,10 @@ function loadCachedOverlay(url: string, cb: (img: HTMLImageElement | null) => vo
   img.src = url;
 }
 
-let sharedDefaultPhoto: HTMLImageElement | null = null;
-let sharedDefaultPhotoLoading = false;
-const defaultPhotoWaiters: Array<(img: HTMLImageElement | null) => void> = [];
+const DEFAULT_FALLBACK_PHOTO = '/assets/aistudio/5329_21a6eb86.png';
 
-function getSharedDefaultPhoto(cb: (img: HTMLImageElement | null) => void) {
-  if (sharedDefaultPhoto) {
-    cb(sharedDefaultPhoto);
-    return;
-  }
-  defaultPhotoWaiters.push(cb);
-  if (sharedDefaultPhotoLoading) return;
-  sharedDefaultPhotoLoading = true;
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    sharedDefaultPhoto = img;
-    defaultPhotoWaiters.splice(0).forEach((fn) => fn(img));
-  };
-  img.onerror = () => {
-    defaultPhotoWaiters.splice(0).forEach((fn) => fn(null));
-  };
-  img.src = '/assets/aistudio/5329_21a6eb86.png';
+function loadCachedPhoto(url: string, cb: (img: HTMLImageElement | null) => void) {
+  loadCachedOverlay(url, cb);
 }
 
 let sharedOfficialLogo: HTMLImageElement | null = null;
@@ -125,9 +107,17 @@ export const TemplatePreviewCanvas: React.FC<TemplatePreviewCanvasProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const templatePhotoUrl = template.defaultPhotoSrc || DEFAULT_FALLBACK_PHOTO;
+  const templateSecPhotoUrl = template.defaultQuote?.settings.secondaryPhotoSrc || '';
+
   const [inView, setInView] = useState(eager);
   const [rendered, setRendered] = useState(false);
-  const [fallbackPhoto, setFallbackPhoto] = useState<HTMLImageElement | null>(sharedDefaultPhoto);
+  const [fallbackPhoto, setFallbackPhoto] = useState<HTMLImageElement | null>(
+    () => overlayImageCache.get(templatePhotoUrl) ?? null
+  );
+  const [fallbackSecPhoto, setFallbackSecPhoto] = useState<HTMLImageElement | null>(
+    () => (templateSecPhotoUrl ? overlayImageCache.get(templateSecPhotoUrl) ?? null : null)
+  );
   const [fallbackOfficialLogo, setFallbackOfficialLogo] = useState<HTMLImageElement | null>(
     sharedOfficialLogo
   );
@@ -160,13 +150,26 @@ export const TemplatePreviewCanvas: React.FC<TemplatePreviewCanvasProps> = ({
 
   useEffect(() => {
     if (!inView) return;
-    if (!photoImg && !fallbackPhoto) {
-      getSharedDefaultPhoto(setFallbackPhoto);
+    let active = true;
+    if (!photoImg) {
+      loadCachedPhoto(templatePhotoUrl, (img) => {
+        if (active) setFallbackPhoto(img);
+      });
+    }
+    if (templateSecPhotoUrl) {
+      loadCachedPhoto(templateSecPhotoUrl, (img) => {
+        if (active) setFallbackSecPhoto(img);
+      });
+    } else {
+      setFallbackSecPhoto(null);
     }
     if (!officialLogoImg && !fallbackOfficialLogo) {
       getSharedOfficialLogo(setFallbackOfficialLogo);
     }
-  }, [inView, photoImg, fallbackPhoto, officialLogoImg, fallbackOfficialLogo]);
+    return () => {
+      active = false;
+    };
+  }, [inView, photoImg, templatePhotoUrl, templateSecPhotoUrl, officialLogoImg, fallbackOfficialLogo]);
 
   useEffect(() => {
     if (!inView) return;
@@ -197,8 +200,19 @@ export const TemplatePreviewCanvas: React.FC<TemplatePreviewCanvasProps> = ({
     ctx.save();
     ctx.scale(scale, scale);
 
-    const effectiveHeadline = headline.trim() ? headline : DEFAULT_THUMB_HEADLINE;
-    const effectiveHighlights = headline.trim() ? highlights : DEFAULT_THUMB_HIGHLIGHTS;
+    const hasCustomHeadline =
+      headline !== DEFAULT_THUMB_HEADLINE && headline.trim().length > 0;
+    const quoteDefaults = template.defaultQuote;
+    const effectiveHeadline = hasCustomHeadline
+      ? headline
+      : quoteDefaults?.headline || (headline.trim() ? headline : DEFAULT_THUMB_HEADLINE);
+    const effectiveHighlights = hasCustomHeadline
+      ? highlights
+      : quoteDefaults?.highlights ?? (headline.trim() ? highlights : DEFAULT_THUMB_HIGHLIGHTS);
+    const resolvedFont =
+      !hasCustomHeadline && quoteDefaults?.fontId
+        ? BUILTIN_FONTS.find((f) => f.id === quoteDefaults.fontId) || activeFont
+        : activeFont;
 
     renderNewsCard({
       ctx,
@@ -212,7 +226,7 @@ export const TemplatePreviewCanvas: React.FC<TemplatePreviewCanvasProps> = ({
       lineMode: 'auto',
       fontSizePercent: 100,
       lineGapPercent: 92,
-      font: activeFont,
+      font: resolvedFont,
       textOffsetX: 0,
       textOffsetY: 0,
       textShadow: false,
@@ -222,6 +236,7 @@ export const TemplatePreviewCanvas: React.FC<TemplatePreviewCanvasProps> = ({
       photoPanX: 0,
       photoPanY: 0,
       logoSettings,
+      secondaryPhotoImg: fallbackSecPhoto,
       isExport: true,
     });
 
@@ -234,6 +249,7 @@ export const TemplatePreviewCanvas: React.FC<TemplatePreviewCanvasProps> = ({
     overlayImg,
     photoImg,
     fallbackPhoto,
+    fallbackSecPhoto,
     logoImg,
     officialLogoImg,
     fallbackOfficialLogo,

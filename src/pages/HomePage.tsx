@@ -334,36 +334,6 @@ export const HomePage: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              {/* Floating badge: Headline auto fetched */}
-              <div className="pointer-events-none absolute -left-3 bottom-16 z-20 hidden items-center gap-2.5 rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-2.5 shadow-md sm:flex dark:border-[#1F2937] dark:bg-[#111827]">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60">
-                  <Sparkles className="h-4 w-4" />
-                </span>
-                <div className="leading-tight">
-                  <p className="text-[12.5px] font-semibold text-[#0F172A] dark:text-slate-100">
-                    হেডলাইন অটো বসেছে
-                  </p>
-                  <p className="text-[11px] text-[#64748B] dark:text-slate-400">
-                    যেকোনো নিউজ লিংক থেকে
-                  </p>
-                </div>
-              </div>
-
-              {/* Floating badge: Download ready */}
-              <div className="pointer-events-none absolute -bottom-4 right-3 z-20 hidden items-center gap-2.5 rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-2.5 shadow-md sm:flex dark:border-[#1F2937] dark:bg-[#111827]">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-[#4F46E5] dark:bg-indigo-950/60 dark:text-indigo-400">
-                  <Download className="h-4 w-4" />
-                </span>
-                <div className="leading-tight">
-                  <p className="text-[12.5px] font-semibold text-[#0F172A] dark:text-slate-100">
-                    ডাউনলোড হয়েছে ✓
-                  </p>
-                  <p className="text-[11px] text-[#64748B] tabular-nums dark:text-slate-400">
-                    PNG / JPG · HD কোয়ালিটি
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         </section>
